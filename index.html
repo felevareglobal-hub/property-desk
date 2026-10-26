@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Property Desk</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#eef2f5;--ink:#14202b;--mute:#5d6b78;--card:#fff;--line:#d7dfe6;--acc:#0f6e8c;--hi:#c9822b;--ok:#2e7d5b}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select,textarea{font:inherit;color:inherit}
+.hide{display:none!important}
+header{display:flex;gap:12px;align-items:center;padding:14px 18px;background:var(--ink);color:#fff;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:800;margin-right:auto}
+.tabs button{background:none;border:0;color:#9fb0bf;padding:6px 12px;cursor:pointer;font-weight:600;border-bottom:2px solid transparent}
+.tabs button.on{color:#fff;border-color:var(--hi)}
+.lnk{background:none;border:0;color:#9fb0bf;cursor:pointer}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.bar input,.bar select{padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;min-width:0}
+.bar input{flex:1 1 180px}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:#b3402f}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:8px;padding:14px}
+.card.p1{border-left-color:var(--hi)}.card.p2{border-left-color:var(--acc)}
+.card h3{margin:0 0 4px;font-size:16px}
+.price{font-weight:800;font-size:18px;color:var(--acc)}
+.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:#e3edf2;margin:0 4px 4px 0}
+.tag.sell{background:#fbeedc}.tag.rent{background:#dff0e8}
+.sub{color:var(--mute);font-size:13px}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.row button{padding:5px 10px;font-size:13px}
+.empty{padding:40px;text-align:center;color:var(--mute)}
+dialog{border:0;border-radius:10px;padding:18px;width:min(520px,94vw);max-height:90vh}
+dialog::backdrop{background:rgba(20,32,43,.5)}
+label{display:block;font-size:13px;color:var(--mute);margin:8px 0 2px}
+dialog input,dialog select,dialog textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#auth{max-width:340px;margin:12vh auto;background:#fff;padding:24px;border-radius:10px;border:1px solid var(--line)}
+#auth input{width:100%;padding:9px;margin-bottom:8px;border:1px solid var(--line);border-radius:6px}
+.err{color:#b3402f;font-size:13px;min-height:18px}
+:focus-visible{outline:2px solid var(--hi);outline-offset:2px}
+</style></head><body>
+
+<div id="auth" class="hide">
+  <h2 style="margin-top:0">Property Desk</h2>
+  <input id="em" type="email" placeholder="Email" autocomplete="email">
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+  <div class="err" id="aerr"></div>
+  <button class="btn" onclick="doAuth(false)">Sign in</button>
+  <button class="btn ghost" onclick="doAuth(true)">Create account</button>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <h1>Property Desk</h1>
+    <div class="tabs"><button id="t-props" class="on" onclick="setTab('props')">Properties</button><button id="t-cons" onclick="setTab('cons')">Contacts</button></div>
+    <button class="lnk" onclick="signOut()">Sign out</button>
+  </header>
+  <main>
+    <div class="bar" id="bar"></div>
+    <div class="grid" id="list"></div>
+  </main>
+</div>
+
+<dialog id="dlg"></dialog>
+
+<script>
+const SUPABASE_URL = 'https://mbmrzyhcjivrbiaayiah.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ibXJ6eWhjaml2cmJpYWF5aWFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NDc4NDIsImV4cCI6MjA5NjIyMzg0Mn0.ozK0aUNvYfogJeLVnwkgGjBxGtHI_xl2f0P22GiTgAU';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let org = null, props = [], cons = [], tab = 'props', cur = null;
+const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
+const CATS = ['residential','commercial','industrial','land','other'];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['location','Locality','text'],['city','City','text'],['area_sqft','Area (sq ft)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
+const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
+
+function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
+function show(id){ $('#auth').classList.toggle('hide', id !== 'auth'); $('#app').classList.toggle('hide', id !== 'app'); }
+
+async function doAuth(signup){
+  const email = $('#em').value.trim(), password = $('#pw').value;
+  const r = signup ? await sb.auth.signUp({email, password}) : await sb.auth.signInWithPassword({email, password});
+  if (r.error) { $('#aerr').textContent = r.error.message; return; }
+  if (signup && !r.data.session) { $('#aerr').textContent = 'Check your email to confirm, then sign in.'; return; }
+  boot();
+}
+async function signOut(){ await sb.auth.signOut(); show('auth'); }
+async function boot(){
+  const s = await sb.auth.getSession();
+  if (!s.data.session) { show('auth'); return; }
+  const m = await sb.from('re_members').select('org_id').eq('user_id', s.data.session.user.id).limit(1);
+  if (m.data && m.data.length) org = m.data[0].org_id;
+  else { const r = await sb.rpc('re_bootstrap'); if (r.error) { alert(r.error.message); return; } org = r.data; }
+  show('app'); await load();
+}
+async function load(){
+  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*')]);
+  props = r[0].data || []; cons = r[1].data || [];
+  buildBar(); render();
+}
+
+function opts(list, sel){ return list.map(o => { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : (o || 'Any'); return '<option value="' + esc(v) + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join(''); }
+function buildBar(){
+  const keep = {q: ($('#q') || {}).value || '', d: ($('#fd') || {}).value || '', c: ($('#fc') || {}).value || '', s: ($('#fs') || {}).value || '', o: ($('#so') || {}).value || '', b: ($('#mb') || {}).value || ''};
+  let h = '<input id="q" placeholder="Search name, location, notes" oninput="render()" value="' + esc(keep.q) + '">';
+  if (tab === 'props') {
+    h += '<select id="fd" onchange="render()">' + opts([['', 'All deals'], ['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], keep.d) + '</select>';
+    h += '<select id="fc" onchange="render()">' + opts([['', 'All categories'], ...CATS.map(c => [c, c])], keep.c) + '</select>';
+    h += '<select id="fs" onchange="render()">' + opts([['', 'All statuses'], 'available', 'negotiating', 'closed', 'on hold'], keep.s) + '</select>';
+    h += '<select id="mb" onchange="render()"><option value="">Match for client…</option>' + cons.filter(c => c.kind === 'buyer' || c.kind === 'tenant').map(c => '<option value="' + c.id + '"' + (c.id === keep.b ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
+    h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
+  } else {
+    h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord'], keep.d) + '</select>';
+    h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
+  }
+  h += '<button class="btn" onclick="openForm()">+ Add</button><button class="btn ghost" onclick="exportCsv()">Export CSV</button>';
+  $('#bar').innerHTML = h;
+}
+function setTab(t){ tab = t; $('#t-props').classList.toggle('on', t === 'props'); $('#t-cons').classList.toggle('on', t === 'cons'); buildBar(); render(); }
+
+function matches(p, c){
+  if (c.kind === 'buyer' && p.deal_type !== 'sell') return false;
+  if (c.kind === 'tenant' && p.deal_type !== 'rent') return false;
+  if (c.preferred_category && c.preferred_category !== p.category) return false;
+  if (c.preferred_location && !((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(c.preferred_location.toLowerCase())) return false;
+  if (c.budget_max && p.price > c.budget_max) return false;
+  if (c.budget_min && p.price < c.budget_min) return false;
+  return p.status !== 'closed';
+}
+const byNew = (a, b) => (b.created_at || '') > (a.created_at || '') ? 1 : -1;
+const SORT = {
+  priority: (a, b) => (a.priority - b.priority) || byNew(a, b),
+  price_asc: (a, b) => (a.price || 0) - (b.price || 0),
+  price_desc: (a, b) => (b.price || 0) - (a.price || 0),
+  budget: (a, b) => (b.budget_max || 0) - (a.budget_max || 0),
+  location: (a, b) => ((a.location || a.preferred_location || '')).localeCompare(b.location || b.preferred_location || ''),
+  newest: byNew
+};
+function cname(id){ const c = cons.find(x => x.id === id); return c ? c : null; }
+function contactLine(label, id){ const c = cname(id); if (!c) return ''; return '<div class="sub">' + label + ': ' + esc(c.name) + (c.phone ? ' · <a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : '') + '</div>'; }
+
+function render(){
+  const q = (($('#q') || {}).value || '').toLowerCase(), d = ($('#fd') || {}).value, so = ($('#so') || {}).value || 'priority';
+  let rows;
+  if (tab === 'props') {
+    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, mb = cname(($('#mb') || {}).value);
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || JSON.stringify(p).toLowerCase().includes(q)));
+    rows.sort(SORT[so] || SORT.priority);
+    $('#list').innerHTML = rows.length ? rows.map(p =>
+      '<div class="card p' + p.priority + '"><h3>' + esc(p.title) + '</h3>' +
+      '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span><span class="tag">' + esc(p.status) + '</span>' +
+      '<div class="price">' + fmt(p.price) + '</div>' +
+      '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + '</div>' +
+      contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) +
+      (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
+      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button></div></div>'
+    ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
+  } else {
+    rows = cons.filter(c => (!d || c.kind === d) && (!q || JSON.stringify(c).toLowerCase().includes(q)));
+    rows.sort(SORT[so] || SORT.priority);
+    $('#list').innerHTML = rows.length ? rows.map(c =>
+      '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
+      '<div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div>' +
+      ((c.budget_min || c.budget_max) ? '<div class="price">' + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' : '') +
+      '<div class="sub">' + esc([c.preferred_category, c.preferred_location].filter(Boolean).join(' · ')) + '</div>' +
+      (c.notes ? '<div class="sub">' + esc(c.notes) + '</div>' : '') +
+      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + c.id + '\')">Edit</button></div></div>'
+    ).join('') : '<div class="empty">No contacts yet. Add buyers, sellers, tenants and landlords here.</div>';
+  }
+}
+
+function openForm(id){
+  const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
+  cur = id ? list.find(x => x.id === id) : {priority: 2};
+  let h = '<h3 style="margin-top:0">' + (id ? 'Edit' : 'Add') + (tab === 'props' ? ' property' : ' contact') + '</h3><div class="two">';
+  fields.forEach(f => {
+    const v = cur[f[0]] == null ? '' : cur[f[0]];
+    let inp;
+    if (f[2] === 'sel') inp = '<select data-k="' + f[0] + '">' + opts(f[3], v) + '</select>';
+    else if (f[2] === 'contact') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.kind + ')</option>').join('') + '</select>';
+    else if (f[2] === 'area') inp = '<textarea rows="3" data-k="' + f[0] + '">' + esc(v) + '</textarea>';
+    else inp = '<input data-k="' + f[0] + '" type="' + f[2] + '" value="' + esc(v) + '">';
+    h += '<div' + (f[2] === 'area' || f[0] === 'title' || f[0] === 'name' ? ' style="grid-column:1/3"' : '') + '><label>' + f[1] + '</label>' + inp + '</div>';
+  });
+  h += '</div><div class="row" style="margin-top:14px"><button class="btn" onclick="saveForm()">Save</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Cancel</button>' + (id ? '<button class="btn danger" style="margin-left:auto" onclick="delRow()">Delete</button>' : '') + '</div>';
+  $('#dlg').innerHTML = h; $('#dlg').showModal();
+}
+async function saveForm(){
+  const rec = {};
+  document.querySelectorAll('#dlg [data-k]').forEach(el => {
+    let v = el.value; const k = el.dataset.k;
+    if (el.type === 'number') v = v === '' ? null : Number(v);
+    else if (k === 'priority') v = Number(v);
+    else if (v === '') v = null;
+    rec[k] = v;
+  });
+  const t = tab === 'props' ? 're_properties' : 're_contacts';
+  if ((tab === 'props' && !rec.title) || (tab === 'cons' && !rec.name)) { alert('Please enter a ' + (tab === 'props' ? 'title' : 'name') + '.'); return; }
+  const r = cur.id ? await sb.from(t).update(rec).eq('id', cur.id) : await sb.from(t).insert(Object.assign({org_id: org}, rec));
+  if (r.error) { alert(r.error.message); return; }
+  $('#dlg').close(); load();
+}
+async function delRow(){
+  if (!confirm('Delete this record? This cannot be undone.')) return;
+  const r = await sb.from(tab === 'props' ? 're_properties' : 're_contacts').delete().eq('id', cur.id);
+  if (r.error) { alert(r.error.message); return; }
+  $('#dlg').close(); load();
+}
+function showMatches(id){
+  const p = props.find(x => x.id === id);
+  const m = cons.filter(c => (c.kind === 'buyer' || c.kind === 'tenant') && matches(p, c)).sort(SORT.priority);
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">Clients matching “' + esc(p.title) + '”</h3>' +
+    (m.length ? m.map(c => '<div class="card p' + c.priority + '" style="margin-bottom:8px"><b>' + esc(c.name) + '</b> <span class="tag">' + c.kind + '</span><div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a> · ' : '') + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div></div>').join('') : '<div class="empty">No buyers or tenants match this property’s price, location and category.</div>') +
+    '<div class="row"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
+  $('#dlg').showModal();
+}
+function exportCsv(){
+  const list = tab === 'props' ? props : cons;
+  if (!list.length) return;
+  const keys = Object.keys(list[0]).filter(k => k !== 'org_id' && k !== 'created_by');
+  const csv = [keys.join(',')].concat(list.map(r => keys.map(k => '"' + String(r[k] == null ? '' : r[k]).replace(/"/g, '""') + '"').join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
+  a.download = (tab === 'props' ? 'properties' : 'contacts') + '.csv'; a.click();
+}
+boot();
+</script>
+</body></html>
