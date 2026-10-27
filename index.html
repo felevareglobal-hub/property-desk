@@ -43,6 +43,18 @@ dialog input,dialog select,dialog textarea{width:100%;padding:8px;border:1px sol
 .dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.dash .wide{grid-column:1/-1}
 .big{font-size:34px;font-weight:800;line-height:1.1}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:14px}
+.bar input.n{flex:0 1 128px}
+.stat{border:0;border-radius:12px;color:#fff;padding:16px}.stat .sub{color:rgba(255,255,255,.88)}
+.s-total{background:#2457a6}.s-pend{background:#b26a00}.s-won{background:#218a5b}.s-lost{background:#c0453a}
+.brk{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px}
+.seg{display:flex;height:22px;background:#e8eef2;border-radius:6px;overflow:hidden;flex:1}
+.seg span{color:#fff;font-size:12px;text-align:center;line-height:22px;min-width:18px}
+.brow{display:flex;align-items:center;gap:8px;margin:8px 0}.bl{width:96px;font-size:13px;text-transform:capitalize}.bn{width:24px;font-weight:800;text-align:right}
+.leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--mute)}.leg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+.cols{display:flex;gap:10px;align-items:flex-end;height:150px}.col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px}
+.col i{display:block;width:100%;border-radius:6px 6px 0 0;min-height:2px}.col span{font-size:12px;color:var(--mute)}
+.hot{display:flex;gap:12px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.hot .price{margin-left:auto;font-size:15px}
+.chip{display:inline-block;padding:6px 14px;border-radius:99px;color:#fff;font-weight:600;margin:0 6px 6px 0}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -78,7 +90,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp
 let org = null, props = [], cons = [], tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['location','Locality','text'],['city','City','text'],['area_sqft','Area (sq ft)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
 const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
@@ -117,6 +129,9 @@ function buildBar(){
     h += '<select id="fs" onchange="render()">' + opts([['', 'All statuses'], 'available', 'negotiating', 'closed', 'lost', 'on hold'], keep.s) + '</select>';
     h += '<select id="mb" onchange="render()"><option value="">Match for client…</option>' + cons.filter(c => c.kind === 'buyer' || c.kind === 'tenant').map(c => '<option value="' + c.id + '"' + (c.id === keep.b ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
+    const kv = id => ($('#' + id) || {}).value || '';
+    const nb = (id, ph) => '<input class="n" id="' + id + '" type="number" min="0" placeholder="' + ph + '" oninput="render()" value="' + esc(kv(id)) + '">';
+    h += '<div style="flex-basis:100%"></div><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
@@ -154,13 +169,19 @@ function render(){
   let rows;
   if (tab === 'props') {
     const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, mb = cname(($('#mb') || {}).value);
-    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || JSON.stringify(p).toLowerCase().includes(q)));
+    const num = id => { const v = ($('#' + id) || {}).value; return v ? Number(v) : null; };
+    const loc = (($('#fl') || {}).value || '').toLowerCase().trim();
+    const sm = [num('smin'), num('smax')], pr = [num('pmin'), num('pmax')], fr = [num('fmin'), num('fmax')];
+    const inR = (v, r, k) => (r[0] == null || (v != null && v >= r[0] * k)) && (r[1] == null || (v != null && v <= r[1] * k));
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || JSON.stringify(p).toLowerCase().includes(q)) &&
+      (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
+    if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties';
     $('#list').innerHTML = rows.length ? rows.map(p =>
       '<div class="card p' + p.priority + '"><h3>' + esc(p.title) + '</h3>' +
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span><span class="tag">' + esc(p.status) + '</span>' +
       '<div class="price">' + fmt(p.price) + '</div>' +
-      '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + '</div>' +
+      '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
       contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
       '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button></div></div>'
@@ -180,13 +201,24 @@ function render(){
 }
 
 const PEND = ['available', 'negotiating', 'on hold'];
-function dashTable(title, keys, field){
-  const rows = keys.map(k => {
-    const r = props.filter(p => p[field] === k[0]);
-    const c = st => r.filter(p => st.includes(p.status)).length;
-    return '<tr><td>' + k[1] + '</td><td>' + r.length + '</td><td>' + c(PEND) + '</td><td>' + c(['closed']) + '</td><td>' + c(['lost']) + '</td></tr>';
-  }).join('');
-  return '<div class="card wide"><h3>' + title + '</h3><div style="overflow-x:auto"><table><tr><th></th><th>Leads</th><th>Pending</th><th>Closed</th><th>Lost</th></tr>' + rows + '</table></div></div>';
+const COL = {pend: '#b26a00', won: '#218a5b', lost: '#c0453a'};
+function clearF(){ document.querySelectorAll('#bar input, #bar select').forEach(e => { if (e.id !== 'so') e.value = ''; }); render(); }
+function segBar(r, max){
+  const c = st => r.filter(p => st.includes(p.status)).length;
+  const w = v => (v * 100 / max) + '%';
+  return '<div class="seg">' + [[c(PEND), COL.pend], [c(['closed']), COL.won], [c(['lost']), COL.lost]].map(x => x[0] ? '<span style="width:' + w(x[0]) + ';background:' + x[1] + '">' + x[0] + '</span>' : '').join('') + '</div>';
+}
+function barBlock(title, keys, field){
+  const g = keys.map(k => [k[1], props.filter(p => p[field] === k[0])]);
+  const max = Math.max(1, ...g.map(x => x[1].length));
+  return '<div><h3>' + title + '</h3>' + g.map(x => '<div class="brow"><div class="bl">' + esc(x[0]) + '</div>' + segBar(x[1], max) + '<div class="bn">' + x[1].length + '</div></div>').join('') + '</div>';
+}
+function trend(){
+  const now = new Date(), m = [], cl = ['#2457a6', '#0f6e8c', '#218a5b', '#b26a00', '#7a4bb3', '#c0453a'];
+  for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); m.push({y: d.getFullYear(), mo: d.getMonth(), l: d.toLocaleString('en', {month: 'short'}), n: 0}); }
+  props.forEach(p => { const d = new Date(p.created_at); const x = m.find(k => k.y === d.getFullYear() && k.mo === d.getMonth()); if (x) x.n++; });
+  const max = Math.max(1, ...m.map(x => x.n));
+  return '<div class="cols">' + m.map((x, i) => '<div class="col"><b>' + x.n + '</b><i style="height:' + (x.n * 100 / max) + 'px;background:' + cl[i] + '"></i><span>' + x.l + '</span></div>').join('') + '</div>';
 }
 function renderDash(){
   $('#list').className = 'dash';
@@ -195,16 +227,19 @@ function renderDash(){
   const now = new Date();
   const month = props.filter(p => { const d = new Date(p.created_at); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
   const rate = won + lost ? Math.round(won * 100 / (won + lost)) + '% of decided leads' : 'No decided leads yet';
-  const stat = (label, val, cls, sub) => '<div class="card ' + cls + '"><div class="sub">' + label + '</div><div class="big">' + val + '</div><div class="sub">' + sub + '</div></div>';
-  const cc = k => cons.filter(c => c.kind === k).length;
+  const stat = (label, val, cls, sub) => '<div class="card stat ' + cls + '"><div class="sub">' + label + '</div><div class="big">' + val + '</div><div class="sub">' + sub + '</div></div>';
+  const cc = (k, label, col) => '<span class="chip" style="background:' + col + '">' + cons.filter(c => c.kind === k).length + ' ' + label + '</span>';
+  const hot = props.filter(p => PEND.includes(p.status) && p.priority === 1).slice(0, 5);
   $('#list').innerHTML =
-    stat('Total leads', total, 'p2', month + ' added this month') +
-    stat('Pending', pend, 'p1', n(['available']) + ' available · ' + n(['negotiating']) + ' negotiating · ' + n(['on hold']) + ' on hold') +
-    stat('Closed', won, 'ok', rate) +
-    stat('Lost', lost, 'bad', 'Set status to “lost” on a property') +
-    dashTable('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') +
-    dashTable('By category', CATS.map(c => [c, c]), 'category') +
-    '<div class="card wide"><h3>Contacts</h3><div class="sub">' + cons.length + ' total · ' + cc('buyer') + ' buyers · ' + cc('seller') + ' sellers · ' + cc('tenant') + ' tenants · ' + cc('landlord') + ' landlords · ' + cc('broker') + ' brokers</div></div>';
+    stat('Total leads', total, 's-total', month + ' added this month') +
+    stat('Pending', pend, 's-pend', n(['available']) + ' available · ' + n(['negotiating']) + ' negotiating · ' + n(['on hold']) + ' on hold') +
+    stat('Closed', won, 's-won', rate) +
+    stat('Lost', lost, 's-lost', 'Set status to “lost” on a property') +
+    '<div class="card wide"><div class="brk">' + barBlock('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') + barBlock('By category', CATS.map(c => [c, c]), 'category') + '</div>' +
+      '<div class="leg"><span><i style="background:' + COL.pend + '"></i>Pending</span><span><i style="background:' + COL.won + '"></i>Closed</span><span><i style="background:' + COL.lost + '"></i>Lost</span></div></div>' +
+    '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
+    '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
+    '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
 }
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
