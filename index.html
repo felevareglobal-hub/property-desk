@@ -39,6 +39,10 @@ dialog input,dialog select,dialog textarea{width:100%;padding:8px;border:1px sol
 #auth{max-width:340px;margin:12vh auto;background:#fff;padding:24px;border-radius:10px;border:1px solid var(--line)}
 #auth input{width:100%;padding:9px;margin-bottom:8px;border:1px solid var(--line);border-radius:6px}
 .err{color:#b3402f;font-size:13px;min-height:18px}
+.card.ok{border-left-color:var(--ok)}.card.bad{border-left-color:#b3402f}
+.dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.dash .wide{grid-column:1/-1}
+.big{font-size:34px;font-weight:800;line-height:1.1}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:14px}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -54,7 +58,7 @@ dialog input,dialog select,dialog textarea{width:100%;padding:8px;border:1px sol
 <div id="app" class="hide">
   <header>
     <h1>Property Desk</h1>
-    <div class="tabs"><button id="t-props" class="on" onclick="setTab('props')">Properties</button><button id="t-cons" onclick="setTab('cons')">Contacts</button></div>
+    <div class="tabs"><button id="t-dash" class="on" onclick="setTab('dash')">Dashboard</button><button id="t-props" onclick="setTab('props')">Properties</button><button id="t-cons" onclick="setTab('cons')">Contacts</button></div>
     <button class="lnk" onclick="signOut()">Sign out</button>
   </header>
   <main>
@@ -71,11 +75,11 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let org = null, props = [], cons = [], tab = 'props', cur = null;
+let org = null, props = [], cons = [], tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['location','Locality','text'],['city','City','text'],['area_sqft','Area (sq ft)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
-const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['location','Locality','text'],['city','City','text'],['area_sqft','Area (sq ft)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
+const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
 function show(id){ $('#auth').classList.toggle('hide', id !== 'auth'); $('#app').classList.toggle('hide', id !== 'app'); }
@@ -104,22 +108,23 @@ async function load(){
 
 function opts(list, sel){ return list.map(o => { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : (o || 'Any'); return '<option value="' + esc(v) + '"' + (String(v) === String(sel) ? ' selected' : '') + '>' + esc(l) + '</option>'; }).join(''); }
 function buildBar(){
+  if (tab === 'dash') { $('#bar').innerHTML = ''; return; }
   const keep = {q: ($('#q') || {}).value || '', d: ($('#fd') || {}).value || '', c: ($('#fc') || {}).value || '', s: ($('#fs') || {}).value || '', o: ($('#so') || {}).value || '', b: ($('#mb') || {}).value || ''};
   let h = '<input id="q" placeholder="Search name, location, notes" oninput="render()" value="' + esc(keep.q) + '">';
   if (tab === 'props') {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All deals'], ['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], keep.d) + '</select>';
     h += '<select id="fc" onchange="render()">' + opts([['', 'All categories'], ...CATS.map(c => [c, c])], keep.c) + '</select>';
-    h += '<select id="fs" onchange="render()">' + opts([['', 'All statuses'], 'available', 'negotiating', 'closed', 'on hold'], keep.s) + '</select>';
+    h += '<select id="fs" onchange="render()">' + opts([['', 'All statuses'], 'available', 'negotiating', 'closed', 'lost', 'on hold'], keep.s) + '</select>';
     h += '<select id="mb" onchange="render()"><option value="">Match for client…</option>' + cons.filter(c => c.kind === 'buyer' || c.kind === 'tenant').map(c => '<option value="' + c.id + '"' + (c.id === keep.b ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
   } else {
-    h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord'], keep.d) + '</select>';
+    h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
   }
   h += '<button class="btn" onclick="openForm()">+ Add</button><button class="btn ghost" onclick="exportCsv()">Export CSV</button>';
   $('#bar').innerHTML = h;
 }
-function setTab(t){ tab = t; $('#t-props').classList.toggle('on', t === 'props'); $('#t-cons').classList.toggle('on', t === 'cons'); buildBar(); render(); }
+function setTab(t){ tab = t; ['dash','props','cons'].forEach(k => $('#t-' + k).classList.toggle('on', k === t)); buildBar(); render(); }
 
 function matches(p, c){
   if (c.kind === 'buyer' && p.deal_type !== 'sell') return false;
@@ -128,7 +133,7 @@ function matches(p, c){
   if (c.preferred_location && !((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(c.preferred_location.toLowerCase())) return false;
   if (c.budget_max && p.price > c.budget_max) return false;
   if (c.budget_min && p.price < c.budget_min) return false;
-  return p.status !== 'closed';
+  return p.status !== 'closed' && p.status !== 'lost';
 }
 const byNew = (a, b) => (b.created_at || '') > (a.created_at || '') ? 1 : -1;
 const SORT = {
@@ -143,6 +148,8 @@ function cname(id){ const c = cons.find(x => x.id === id); return c ? c : null; 
 function contactLine(label, id){ const c = cname(id); if (!c) return ''; return '<div class="sub">' + label + ': ' + esc(c.name) + (c.phone ? ' · <a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : '') + '</div>'; }
 
 function render(){
+  if (tab === 'dash') { renderDash(); return; }
+  $('#list').className = 'grid';
   const q = (($('#q') || {}).value || '').toLowerCase(), d = ($('#fd') || {}).value, so = ($('#so') || {}).value || 'priority';
   let rows;
   if (tab === 'props') {
@@ -172,6 +179,33 @@ function render(){
   }
 }
 
+const PEND = ['available', 'negotiating', 'on hold'];
+function dashTable(title, keys, field){
+  const rows = keys.map(k => {
+    const r = props.filter(p => p[field] === k[0]);
+    const c = st => r.filter(p => st.includes(p.status)).length;
+    return '<tr><td>' + k[1] + '</td><td>' + r.length + '</td><td>' + c(PEND) + '</td><td>' + c(['closed']) + '</td><td>' + c(['lost']) + '</td></tr>';
+  }).join('');
+  return '<div class="card wide"><h3>' + title + '</h3><div style="overflow-x:auto"><table><tr><th></th><th>Leads</th><th>Pending</th><th>Closed</th><th>Lost</th></tr>' + rows + '</table></div></div>';
+}
+function renderDash(){
+  $('#list').className = 'dash';
+  const n = st => props.filter(p => st.includes(p.status)).length;
+  const total = props.length, pend = n(PEND), won = n(['closed']), lost = n(['lost']);
+  const now = new Date();
+  const month = props.filter(p => { const d = new Date(p.created_at); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length;
+  const rate = won + lost ? Math.round(won * 100 / (won + lost)) + '% of decided leads' : 'No decided leads yet';
+  const stat = (label, val, cls, sub) => '<div class="card ' + cls + '"><div class="sub">' + label + '</div><div class="big">' + val + '</div><div class="sub">' + sub + '</div></div>';
+  const cc = k => cons.filter(c => c.kind === k).length;
+  $('#list').innerHTML =
+    stat('Total leads', total, 'p2', month + ' added this month') +
+    stat('Pending', pend, 'p1', n(['available']) + ' available · ' + n(['negotiating']) + ' negotiating · ' + n(['on hold']) + ' on hold') +
+    stat('Closed', won, 'ok', rate) +
+    stat('Lost', lost, 'bad', 'Set status to “lost” on a property') +
+    dashTable('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') +
+    dashTable('By category', CATS.map(c => [c, c]), 'category') +
+    '<div class="card wide"><h3>Contacts</h3><div class="sub">' + cons.length + ' total · ' + cc('buyer') + ' buyers · ' + cc('seller') + ' sellers · ' + cc('tenant') + ' tenants · ' + cc('landlord') + ' landlords · ' + cc('broker') + ' brokers</div></div>';
+}
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
   cur = id ? list.find(x => x.id === id) : {priority: 2};
