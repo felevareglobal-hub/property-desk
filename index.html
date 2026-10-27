@@ -58,6 +58,8 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .s-od{background:#a3265c}.s-td{background:#0f6e8c}
 .tag.od{background:#f6d9d5;color:#8f2a1f}.tag.td{background:#fbeedc;color:#8a5200}.tag.up{background:#dde8f6;color:#1d4a8a}
 .note{padding:8px 0;border-bottom:1px solid var(--line);white-space:pre-wrap}
+.s-pipe{background:#4b4bb0}.s-recv{background:#1b6b4a}.s-bro{background:#7a4bb3}.s-net{background:#0b5f6e}
+.stat.m .big{font-size:28px}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -94,7 +96,7 @@ let org = null, props = [], cons = [], notes = [], tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
 const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
@@ -195,7 +197,7 @@ function render(){
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
       fuLabel(p) + '<div class="price">' + fmt(p.price) + '</div>' +
       '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
-      contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) +
+      contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
       '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button></div></div>'
     ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
@@ -242,6 +244,11 @@ function renderDash(){
   const rate = won + lost ? Math.round(won * 100 / (won + lost)) + '% of decided leads' : 'No decided leads yet';
   const stat = (label, val, cls, sub) => '<div class="card stat ' + cls + '"><div class="sub">' + label + '</div><div class="big">' + val + '</div><div class="sub">' + sub + '</div></div>';
   const cc = (k, label, col) => '<span class="chip" style="background:' + col + '">' + cons.filter(c => c.kind === k).length + ' ' + label + '</span>';
+  const sum = (arr, f) => arr.reduce((a, p) => a + (Number(f(p)) || 0), 0);
+  const pipe = sum(props.filter(p => PEND.includes(p.status)), p => p.commission_expected);
+  const recv = sum(props, p => p.commission_received), pay = sum(props, share), net = recv - pay;
+  const toCollect = sum(props.filter(p => p.status === 'closed'), p => Math.max(0, (Number(p.commission_expected) || 0) - (Number(p.commission_received) || 0)));
+  const bro = cons.filter(c => c.kind === 'broker').map(b => { const r = props.filter(p => p.broker_id === b.id); return {n: b.name, leads: r.length, won: r.filter(p => p.status === 'closed').length, earn: sum(r, share)}; }).sort((a, b) => b.earn - a.earn || b.leads - a.leads).slice(0, 5);
   const live = props.filter(p => p.next_follow_up && p.status !== 'closed' && p.status !== 'lost');
   const odL = live.filter(p => p.next_follow_up < dayStr(0)), tdL = live.filter(p => p.next_follow_up === dayStr(0));
   const due = odL.concat(tdL).sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up)).slice(0, 8);
@@ -254,12 +261,23 @@ function renderDash(){
     stat('Lost', lost, 's-lost', 'Set status to “lost” on a property') +
     stat('Overdue follow-ups', odL.length, 's-od', 'Needs a call today') +
     stat('Due today', tdL.length, 's-td', noDate + ' pending without a date') +
+    stat('Expected pipeline', fmt(pipe), 's-pipe m', 'Commission on pending leads') +
+    stat('Commission received', fmt(recv), 's-recv m', fmt(toCollect) + ' still to collect on closed deals') +
+    stat('Broker share', fmt(pay), 's-bro m', 'Payable on received commission') +
+    stat('Net revenue', fmt(net), 's-net m', 'Received after broker share') +
     '<div class="card wide"><h3>Follow-ups to do</h3>' + (due.length ? due.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span>' + fuLabel(p) + '<button class="btn ghost" style="margin-left:auto;padding:4px 10px" onclick="openNotes(\'' + p.id + '\')">Open</button></div>').join('') : '<div class="sub">Nothing due. All caught up.</div>') + '</div>' +
     '<div class="card wide"><div class="brk">' + barBlock('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') + barBlock('By category', CATS.map(c => [c, c]), 'category') + '</div>' +
       '<div class="leg"><span><i style="background:' + COL.pend + '"></i>Pending</span><span><i style="background:' + COL.won + '"></i>Closed</span><span><i style="background:' + COL.lost + '"></i>Lost</span></div></div>' +
     '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
     '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
+    '<div class="card wide"><h3>Top brokers</h3>' + (bro.length ? bro.map(b => '<div class="hot"><b>' + esc(b.n) + '</b><span class="sub">' + b.leads + ' leads · ' + b.won + ' closed</span><span class="price">' + fmt(b.earn) + '</span></div>').join('') : '<div class="sub">Add a broker contact, then pick them on a property to track their share.</div>') + '</div>' +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
+}
+function share(p){ return (Number(p.commission_received) || 0) * (Number(p.broker_share_pct) || 0) / 100; }
+function commLine(p){
+  if (!p.commission_expected && !p.commission_received) return '';
+  const b = cname(p.broker_id);
+  return '<div class="sub">Commission: ' + fmt(p.commission_expected) + ' expected · ' + fmt(p.commission_received || 0) + ' received' + (b ? ' · broker ' + esc(b.name) + ' ' + (p.broker_share_pct || 0) + '%' : '') + '</div>';
 }
 function dayStr(off){ const d = new Date(); d.setDate(d.getDate() + off); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function fuState(p){ if (!p.next_follow_up || p.status === 'closed' || p.status === 'lost') return ''; const t = dayStr(0); return p.next_follow_up < t ? 'od' : p.next_follow_up === t ? 'td' : 'up'; }
@@ -309,6 +327,7 @@ function openForm(id){
     const v = cur[f[0]] == null ? '' : cur[f[0]];
     let inp;
     if (f[2] === 'sel') inp = '<select data-k="' + f[0] + '">' + opts(f[3], v) + '</select>';
+    else if (f[2] === 'broker') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.filter(c => c.kind === 'broker').map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
     else if (f[2] === 'contact') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.kind + ')</option>').join('') + '</select>';
     else if (f[2] === 'area') inp = '<textarea rows="3" data-k="' + f[0] + '">' + esc(v) + '</textarea>';
     else inp = '<input data-k="' + f[0] + '" type="' + f[2] + '" value="' + esc(v) + '">';
