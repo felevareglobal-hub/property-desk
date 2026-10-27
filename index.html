@@ -55,6 +55,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .col i{display:block;width:100%;border-radius:6px 6px 0 0;min-height:2px}.col span{font-size:12px;color:var(--mute)}
 .hot{display:flex;gap:12px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.hot .price{margin-left:auto;font-size:15px}
 .chip{display:inline-block;padding:6px 14px;border-radius:99px;color:#fff;font-weight:600;margin:0 6px 6px 0}
+.s-od{background:#a3265c}.s-td{background:#0f6e8c}
+.tag.od{background:#f6d9d5;color:#8f2a1f}.tag.td{background:#fbeedc;color:#8a5200}.tag.up{background:#dde8f6;color:#1d4a8a}
+.note{padding:8px 0;border-bottom:1px solid var(--line);white-space:pre-wrap}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -87,11 +90,11 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let org = null, props = [], cons = [], tab = 'dash', cur = null;
+let org = null, props = [], cons = [], notes = [], tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['notes','Notes','area']];
 const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
@@ -114,8 +117,8 @@ async function boot(){
   show('app'); await load();
 }
 async function load(){
-  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*')]);
-  props = r[0].data || []; cons = r[1].data || [];
+  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*'), sb.from('re_notes').select('*')]);
+  props = r[0].data || []; cons = r[1].data || []; notes = r[2].data || [];
   buildBar(); render();
 }
 
@@ -129,10 +132,10 @@ function buildBar(){
     h += '<select id="fc" onchange="render()">' + opts([['', 'All categories'], ...CATS.map(c => [c, c])], keep.c) + '</select>';
     h += '<select id="fs" onchange="render()">' + opts([['', 'All statuses'], 'available', 'negotiating', 'closed', 'lost', 'on hold'], keep.s) + '</select>';
     h += '<select id="mb" onchange="render()"><option value="">Match for client…</option>' + cons.filter(c => c.kind === 'buyer' || c.kind === 'tenant').map(c => '<option value="' + c.id + '"' + (c.id === keep.b ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
-    h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
+    h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['followup', 'Follow-up date'], ['newest', 'Newest']], keep.o) + '</select>';
     const kv = id => ($('#' + id) || {}).value || '';
     const nb = (id, ph) => '<input class="n" id="' + id + '" type="number" min="0" placeholder="' + ph + '" oninput="render()" value="' + esc(kv(id)) + '">';
-    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
+    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
@@ -165,6 +168,7 @@ const SORT = {
   price_asc: (a, b) => (a.price || 0) - (b.price || 0),
   price_desc: (a, b) => (b.price || 0) - (a.price || 0),
   budget: (a, b) => (b.budget_max || 0) - (a.budget_max || 0),
+  followup: (a, b) => (a.next_follow_up || '9999').localeCompare(b.next_follow_up || '9999'),
   location: (a, b) => ((a.location || a.preferred_location || '')).localeCompare(b.location || b.preferred_location || ''),
   newest: byNew
 };
@@ -177,23 +181,23 @@ function render(){
   const q = (($('#q') || {}).value || '').toLowerCase(), d = ($('#fd') || {}).value, so = ($('#so') || {}).value || 'priority';
   let rows;
   if (tab === 'props') {
-    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, mb = cname(($('#mb') || {}).value);
+    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, mb = cname(($('#mb') || {}).value);
     const num = id => { const v = ($('#' + id) || {}).value; return v ? Number(v) : null; };
     const loc = (($('#fl') || {}).value || '').toLowerCase().trim();
     const sm = [num('smin'), num('smax')], pr = [num('pmin'), num('pmax')], fr = [num('fmin'), num('fmax')];
     const inR = (v, r, k) => (r[0] == null || (v != null && v >= r[0] * k)) && (r[1] == null || (v != null && v <= r[1] * k));
-    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) &&
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) &&
       (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
     if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties';
     $('#list').innerHTML = rows.length ? rows.map(p =>
       '<div class="card p' + p.priority + '"><h3>' + esc(p.title) + '</h3>' +
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
-      '<div class="price">' + fmt(p.price) + '</div>' +
+      fuLabel(p) + '<div class="price">' + fmt(p.price) + '</div>' +
       '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
       contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
-      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button></div></div>'
+      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button></div></div>'
     ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
   } else {
     rows = cons.filter(c => (!d || c.kind === d) && (!q || JSON.stringify(c).toLowerCase().includes(q)));
@@ -238,17 +242,64 @@ function renderDash(){
   const rate = won + lost ? Math.round(won * 100 / (won + lost)) + '% of decided leads' : 'No decided leads yet';
   const stat = (label, val, cls, sub) => '<div class="card stat ' + cls + '"><div class="sub">' + label + '</div><div class="big">' + val + '</div><div class="sub">' + sub + '</div></div>';
   const cc = (k, label, col) => '<span class="chip" style="background:' + col + '">' + cons.filter(c => c.kind === k).length + ' ' + label + '</span>';
+  const live = props.filter(p => p.next_follow_up && p.status !== 'closed' && p.status !== 'lost');
+  const odL = live.filter(p => p.next_follow_up < dayStr(0)), tdL = live.filter(p => p.next_follow_up === dayStr(0));
+  const due = odL.concat(tdL).sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up)).slice(0, 8);
+  const noDate = props.filter(p => PEND.includes(p.status) && !p.next_follow_up).length;
   const hot = props.filter(p => PEND.includes(p.status) && p.priority === 1).slice(0, 5);
   $('#list').innerHTML =
     stat('Total leads', total, 's-total', month + ' added this month') +
     stat('Pending', pend, 's-pend', n(['available']) + ' available · ' + n(['negotiating']) + ' negotiating · ' + n(['on hold']) + ' on hold') +
     stat('Closed', won, 's-won', rate) +
     stat('Lost', lost, 's-lost', 'Set status to “lost” on a property') +
+    stat('Overdue follow-ups', odL.length, 's-od', 'Needs a call today') +
+    stat('Due today', tdL.length, 's-td', noDate + ' pending without a date') +
+    '<div class="card wide"><h3>Follow-ups to do</h3>' + (due.length ? due.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span>' + fuLabel(p) + '<button class="btn ghost" style="margin-left:auto;padding:4px 10px" onclick="openNotes(\'' + p.id + '\')">Open</button></div>').join('') : '<div class="sub">Nothing due. All caught up.</div>') + '</div>' +
     '<div class="card wide"><div class="brk">' + barBlock('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') + barBlock('By category', CATS.map(c => [c, c]), 'category') + '</div>' +
       '<div class="leg"><span><i style="background:' + COL.pend + '"></i>Pending</span><span><i style="background:' + COL.won + '"></i>Closed</span><span><i style="background:' + COL.lost + '"></i>Lost</span></div></div>' +
     '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
     '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
+}
+function dayStr(off){ const d = new Date(); d.setDate(d.getDate() + off); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function fuState(p){ if (!p.next_follow_up || p.status === 'closed' || p.status === 'lost') return ''; const t = dayStr(0); return p.next_follow_up < t ? 'od' : p.next_follow_up === t ? 'td' : 'up'; }
+function fuLabel(p){
+  const st = fuState(p); if (!st) return '';
+  const d = new Date(p.next_follow_up + 'T00:00:00').toLocaleDateString('en-IN', {day: 'numeric', month: 'short'});
+  return '<span class="tag ' + st + '">' + (st === 'od' ? 'Overdue · ' + d : st === 'td' ? 'Follow up today' : 'Follow-up · ' + d) + '</span>';
+}
+function fuMatch(p, f){
+  if (!f) return true;
+  if (f === 'none') return !p.next_follow_up;
+  const st = fuState(p);
+  if (f === 'od') return st === 'od';
+  if (f === 'td') return st === 'td';
+  return st !== '' && p.next_follow_up >= dayStr(0) && p.next_follow_up <= dayStr(7);
+}
+function openNotes(id){
+  const p = props.find(x => x.id === id);
+  const list = notes.filter(n => n.property_id === id).sort((a, b) => b.created_at > a.created_at ? 1 : -1);
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">' + esc(p.title) + '</h3><div class="sub">' + esc(p.location || '') + '</div>' +
+    '<label>Add a note</label><textarea id="nb" rows="3" placeholder="Call summary, client feedback, next step"></textarea>' +
+    '<label>Next follow-up date</label><input id="nd" type="date" value="' + esc(p.next_follow_up || '') + '">' +
+    '<div class="row"><button class="btn" onclick="addNote(\'' + id + '\')">Save</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>' +
+    '<h4 style="margin:16px 0 4px">History</h4>' +
+    (list.length ? list.map(n => '<div class="note"><div class="sub">' + esc(n.author_email || '') + ' · ' + new Date(n.created_at).toLocaleString('en-IN', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) + '</div>' + esc(n.body) + '</div>').join('') : '<div class="sub">No notes yet.</div>');
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+async function addNote(id){
+  const body = $('#nb').value.trim(), nd = $('#nd').value || null, p = props.find(x => x.id === id);
+  if (!body && nd === (p.next_follow_up || null)) { alert('Write a note or change the follow-up date.'); return; }
+  if (body) {
+    const u = (await sb.auth.getUser()).data.user;
+    const r = await sb.from('re_notes').insert({org_id: org, property_id: id, body: body, author_email: u ? u.email : null});
+    if (r.error) { alert(r.error.message); return; }
+  }
+  if (nd !== (p.next_follow_up || null)) {
+    const r2 = await sb.from('re_properties').update({next_follow_up: nd}).eq('id', id);
+    if (r2.error) { alert(r2.error.message); return; }
+  }
+  await load(); openNotes(id);
 }
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
