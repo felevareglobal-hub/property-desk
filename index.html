@@ -97,7 +97,9 @@ let org = null, props = [], cons = [], notes = [], tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
+const SRC = ['broker','website','referral','walk-in','social media','other'];
+const REASONS = ['price too high','chose another property','client not responding','loan or finance issue','legal or documents','changed plans','other'];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['lead_source','Lead source','sel',[['', 'Not set'], ...SRC]],['lost_reason','Lost reason (if lost)','sel',[['', 'Not set'], ...REASONS]],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
 const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
@@ -138,7 +140,7 @@ function buildBar(){
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['followup', 'Follow-up date'], ['newest', 'Newest']], keep.o) + '</select>';
     const kv = id => ($('#' + id) || {}).value || '';
     const nb = (id, ph) => '<input class="n" id="' + id + '" type="number" min="0" placeholder="' + ph + '" oninput="render()" value="' + esc(kv(id)) + '">';
-    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
+    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
@@ -153,7 +155,7 @@ const SYN = {rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented:
   commercial: ['category', 'commercial'], shop: ['category', 'commercial'], office: ['category', 'commercial'], industrial: ['category', 'industrial'], warehouse: ['category', 'industrial'], factory: ['category', 'industrial'], land: ['category', 'land'], plot: ['category', 'land']};
 function smart(p, q){
   const toks = q.toLowerCase().replace(/(\d)\s*(bhk|rk)/g, '$1$2').split(/\s+/).filter(Boolean);
-  const hay = JSON.stringify(p).toLowerCase();
+  const hay = Object.keys(p).filter(k => !/(^|_)id$|^created|^next_follow/.test(k)).map(k => p[k]).filter(v => v != null).join(' ').toLowerCase();
   return toks.every(t => SYN[t] ? p[SYN[t][0]] === SYN[t][1] : hay.includes(t));
 }
 function matches(p, c){
@@ -184,12 +186,12 @@ function render(){
   const q = (($('#q') || {}).value || '').toLowerCase(), d = ($('#fd') || {}).value, so = ($('#so') || {}).value || 'priority';
   let rows;
   if (tab === 'props') {
-    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, mb = cname(($('#mb') || {}).value);
+    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, sr = ($('#fsr') || {}).value, mb = cname(($('#mb') || {}).value);
     const num = id => { const v = ($('#' + id) || {}).value; return v ? Number(v) : null; };
     const loc = (($('#fl') || {}).value || '').toLowerCase().trim();
     const sm = [num('smin'), num('smax')], pr = [num('pmin'), num('pmax')], fr = [num('fmin'), num('fmax')];
     const inR = (v, r, k) => (r[0] == null || (v != null && v >= r[0] * k)) && (r[1] == null || (v != null && v <= r[1] * k));
-    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) &&
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) &&
       (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
     if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties';
@@ -198,7 +200,7 @@ function render(){
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
       fuLabel(p) + '<div class="price">' + fmt(p.price) + '</div>' +
       '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
-      contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) +
+      contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) + leadLine(p) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
       '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button><button class="btn wa" onclick="openShare(\'' + p.id + '\')">WhatsApp</button></div></div>'
     ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
@@ -225,7 +227,7 @@ function segBar(r, max){
   return '<div class="seg">' + [[c(PEND), COL.pend], [c(['closed']), COL.won], [c(['lost']), COL.lost]].map(x => x[0] ? '<span style="width:' + w(x[0]) + ';background:' + x[1] + '">' + x[0] + '</span>' : '').join('') + '</div>';
 }
 function barBlock(title, keys, field){
-  const g = keys.map(k => [k[1], props.filter(p => p[field] === k[0])]);
+  const g = keys.map(k => [k[1], props.filter(p => (p[field] || '') === k[0])]);
   const max = Math.max(1, ...g.map(x => x[1].length));
   return '<div><h3>' + title + '</h3>' + g.map(x => '<div class="brow"><div class="bl">' + esc(x[0]) + '</div>' + segBar(x[1], max) + '<div class="bn">' + x[1].length + '</div></div>').join('') + '</div>';
 }
@@ -250,6 +252,11 @@ function renderDash(){
   const recv = sum(props, p => p.commission_received), pay = sum(props, share), net = recv - pay;
   const toCollect = sum(props.filter(p => p.status === 'closed'), p => Math.max(0, (Number(p.commission_expected) || 0) - (Number(p.commission_received) || 0)));
   const bro = cons.filter(c => c.kind === 'broker').map(b => { const r = props.filter(p => p.broker_id === b.id); return {n: b.name, leads: r.length, won: r.filter(p => p.status === 'closed').length, earn: sum(r, share)}; }).sort((a, b) => b.earn - a.earn || b.leads - a.leads).slice(0, 5);
+  const srcRows = SRC.map(k => { const r = props.filter(p => p.lead_source === k), w = r.filter(p => p.status === 'closed').length, l = r.filter(p => p.status === 'lost').length; return {k: k, n: r.length, w: w, rate: w + l ? Math.round(w * 100 / (w + l)) : null, rev: sum(r, p => p.commission_received)}; }).filter(x => x.n).sort((a, b) => (b.rate || 0) - (a.rate || 0) || b.n - a.n);
+  const rs = REASONS.map(k => [k, props.filter(p => p.status === 'lost' && p.lost_reason === k).length]);
+  const noR = props.filter(p => p.status === 'lost' && !p.lost_reason).length;
+  if (noR) rs.push(['no reason recorded', noR]);
+  const rmax = Math.max(1, ...rs.map(x => x[1]));
   const live = props.filter(p => p.next_follow_up && p.status !== 'closed' && p.status !== 'lost');
   const odL = live.filter(p => p.next_follow_up < dayStr(0)), tdL = live.filter(p => p.next_follow_up === dayStr(0));
   const due = odL.concat(tdL).sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up)).slice(0, 8);
@@ -267,12 +274,20 @@ function renderDash(){
     stat('Broker share', fmt(pay), 's-bro m', 'Payable on received commission') +
     stat('Net revenue', fmt(net), 's-net m', 'Received after broker share') +
     '<div class="card wide"><h3>Follow-ups to do</h3>' + (due.length ? due.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span>' + fuLabel(p) + '<button class="btn ghost" style="margin-left:auto;padding:4px 10px" onclick="openNotes(\'' + p.id + '\')">Open</button></div>').join('') : '<div class="sub">Nothing due. All caught up.</div>') + '</div>' +
-    '<div class="card wide"><div class="brk">' + barBlock('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') + barBlock('By category', CATS.map(c => [c, c]), 'category') + '</div>' +
+    '<div class="card wide"><div class="brk">' + barBlock('By deal type', [['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], 'deal_type') + barBlock('By category', CATS.map(c => [c, c]), 'category') + barBlock('By lead source', SRC.map(x => [x, x]).concat([['', 'not set']]), 'lead_source') + '</div>' +
       '<div class="leg"><span><i style="background:' + COL.pend + '"></i>Pending</span><span><i style="background:' + COL.won + '"></i>Closed</span><span><i style="background:' + COL.lost + '"></i>Lost</span></div></div>' +
+    '<div class="card wide"><h3>Which sources close deals</h3>' + (srcRows.length ? srcRows.map(x => '<div class="hot"><b style="text-transform:capitalize">' + esc(x.k) + '</b><span class="sub">' + x.n + ' leads · ' + x.w + ' closed · ' + fmt(x.rev) + ' received</span><span class="price">' + (x.rate == null ? '—' : x.rate + '% win') + '</span></div>').join('') : '<div class="sub">Set a lead source on your properties to compare sources.</div>') + '</div>' +
+    '<div class="card wide"><h3>Why deals are lost</h3>' + (lost ? rs.filter(x => x[1]).sort((a, b) => b[1] - a[1]).map(x => '<div class="brow"><div class="bl" style="width:180px">' + esc(x[0]) + '</div><div class="seg"><span style="width:' + (x[1] * 100 / rmax) + '%;background:' + COL.lost + '">' + x[1] + '</span></div></div>').join('') : '<div class="sub">No lost deals yet.</div>') + '</div>' +
     '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
     '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
     '<div class="card wide"><h3>Top brokers</h3>' + (bro.length ? bro.map(b => '<div class="hot"><b>' + esc(b.n) + '</b><span class="sub">' + b.leads + ' leads · ' + b.won + ' closed</span><span class="price">' + fmt(b.earn) + '</span></div>').join('') : '<div class="sub">Add a broker contact, then pick them on a property to track their share.</div>') + '</div>' +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
+}
+function leadLine(p){
+  const a = [];
+  if (p.lead_source) a.push('Source: ' + p.lead_source);
+  if (p.status === 'lost' && p.lost_reason) a.push('Lost: ' + p.lost_reason);
+  return a.length ? '<div class="sub">' + esc(a.join(' · ')) + '</div>' : '';
 }
 function share(p){ return (Number(p.commission_received) || 0) * (Number(p.broker_share_pct) || 0) / 100; }
 function commLine(p){
@@ -377,6 +392,7 @@ async function saveForm(){
     else if (v === '') v = null;
     rec[k] = v;
   });
+  if (tab === 'props' && rec.status === 'lost' && !rec.lost_reason && !confirm('No lost reason selected. Save anyway?')) return;
   const t = tab === 'props' ? 're_properties' : 're_contacts';
   if ((tab === 'props' && !rec.title) || (tab === 'cons' && !rec.name)) { alert('Please enter a ' + (tab === 'props' ? 'title' : 'name') + '.'); return; }
   const r = cur.id ? await sb.from(t).update(rec).eq('id', cur.id) : await sb.from(t).insert(Object.assign({org_id: org}, rec));
