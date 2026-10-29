@@ -60,6 +60,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .note{padding:8px 0;border-bottom:1px solid var(--line);white-space:pre-wrap}
 .s-pipe{background:#4b4bb0}.s-recv{background:#1b6b4a}.s-bro{background:#7a4bb3}.s-net{background:#0b5f6e}
 .stat.m .big{font-size:28px}
+.btn.wa{background:#1b7a49}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -199,7 +200,7 @@ function render(){
       '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
       contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
-      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button></div></div>'
+      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button><button class="btn wa" onclick="openShare(\'' + p.id + '\')">WhatsApp</button></div></div>'
     ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
   } else {
     rows = cons.filter(c => (!d || c.kind === d) && (!q || JSON.stringify(c).toLowerCase().includes(q)));
@@ -319,6 +320,37 @@ async function addNote(id){
   }
   await load(); openNotes(id);
 }
+function waPhone(ph){ let d = String(ph || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; else if (d.length === 11 && d[0] === '0') d = '91' + d.slice(1); return d; }
+function waText(p, c){
+  const deal = {sell: 'For sale', buy: 'Required to buy', rent: 'For rent'}[p.deal_type];
+  const L = [];
+  if (c) L.push('Hi ' + c.name.split(' ')[0] + ',', '');
+  L.push('*' + p.title + '*');
+  L.push([deal, p.category, p.bhk].filter(Boolean).join(' · '));
+  const loc = [p.location, p.city].filter(Boolean).join(', ');
+  if (loc) L.push('📍 ' + loc);
+  const det = [p.area_sqft ? Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '', p.floor != null ? (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : ''].filter(Boolean).join(' · ');
+  if (det) L.push('📐 ' + det);
+  if (p.price) L.push('💰 ' + fmt(p.price) + (p.deal_type === 'rent' ? ' per month' : ''));
+  L.push('', 'Interested? Reply to this message and we will arrange a visit.');
+  return L.join('\n');
+}
+function openShare(id, cid){
+  const p = props.find(x => x.id === id);
+  const cl = cons.filter(c => c.phone && (c.kind === 'buyer' || c.kind === 'tenant'));
+  const mt = cl.filter(c => matches(p, c)), rest = cl.filter(c => !matches(p, c));
+  const o = c => '<option value="' + c.id + '"' + (c.id === cid ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">Share on WhatsApp</h3>' +
+    '<label>Send to</label><select id="wto" onchange="waPick(\'' + id + '\')"><option value="">Choose contact in WhatsApp</option>' +
+    (mt.length ? '<optgroup label="Matching clients">' + mt.map(o).join('') + '</optgroup>' : '') +
+    (rest.length ? '<optgroup label="Other buyers and tenants">' + rest.map(o).join('') + '</optgroup>' : '') + '</select>' +
+    '<label>Message (you can edit it)</label><textarea id="wmsg" rows="9">' + esc(waText(p, cons.find(c => c.id === cid))) + '</textarea>' +
+    '<div class="row"><button class="btn wa" onclick="sendWa()">Open WhatsApp</button><button class="btn ghost" onclick="copyWa()">Copy text</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+function waPick(id){ const c = cons.find(x => x.id === $('#wto').value); $('#wmsg').value = waText(props.find(x => x.id === id), c); }
+function sendWa(){ const c = cons.find(x => x.id === $('#wto').value); const to = c ? waPhone(c.phone) : ''; window.open('https://wa.me/' + to + '?text=' + encodeURIComponent($('#wmsg').value), '_blank'); }
+function copyWa(){ const t = $('#wmsg').value; if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => alert('Message copied')); else { $('#wmsg').select(); document.execCommand('copy'); } }
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
   cur = id ? list.find(x => x.id === id) : {priority: 2};
@@ -361,7 +393,7 @@ function showMatches(id){
   const p = props.find(x => x.id === id);
   const m = cons.filter(c => (c.kind === 'buyer' || c.kind === 'tenant') && matches(p, c)).sort(SORT.priority);
   $('#dlg').innerHTML = '<h3 style="margin-top:0">Clients matching “' + esc(p.title) + '”</h3>' +
-    (m.length ? m.map(c => '<div class="card p' + c.priority + '" style="margin-bottom:8px"><b>' + esc(c.name) + '</b> <span class="tag">' + c.kind + '</span><div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a> · ' : '') + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div></div>').join('') : '<div class="empty">No buyers or tenants match this property’s price, location and category.</div>') +
+    (m.length ? m.map(c => '<div class="card p' + c.priority + '" style="margin-bottom:8px"><b>' + esc(c.name) + '</b> <span class="tag">' + c.kind + '</span><div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a> · ' : '') + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' + (c.phone ? '<div class="row"><button class="btn wa" onclick="openShare(\'' + p.id + '\', \'' + c.id + '\')">Send on WhatsApp</button></div>' : '') + '</div>').join('') : '<div class="empty">No buyers or tenants match this property’s price, location and category.</div>') +
     '<div class="row"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   $('#dlg').showModal();
 }
