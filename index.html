@@ -153,9 +153,14 @@ function setTab(t){ tab = t; ['dash','props','cons'].forEach(k => $('#t-' + k).c
 const SYN = {rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented: ['deal_type', 'rent'], lease: ['deal_type', 'rent'], sale: ['deal_type', 'sell'], sell: ['deal_type', 'sell'], selling: ['deal_type', 'sell'], buy: ['deal_type', 'buy'], buying: ['deal_type', 'buy'],
   residential: ['category', 'residential'], flat: ['category', 'residential'], apartment: ['category', 'residential'], house: ['category', 'residential'], villa: ['category', 'residential'],
   commercial: ['category', 'commercial'], shop: ['category', 'commercial'], office: ['category', 'commercial'], industrial: ['category', 'industrial'], warehouse: ['category', 'industrial'], factory: ['category', 'industrial'], land: ['category', 'land'], plot: ['category', 'land']};
+function linkedText(p){
+  const c = ['seller_id', 'buyer_id', 'broker_id'].map(k => cname(p[k])).filter(Boolean).map(x => [x.name, x.phone, x.email].filter(Boolean).join(' ')).join(' ');
+  return c + ' ' + notes.filter(n => n.property_id === p.id).map(n => n.body).join(' ');
+}
 function smart(p, q){
   const toks = q.toLowerCase().replace(/(\d)\s*(bhk|rk)/g, '$1$2').split(/\s+/).filter(Boolean);
-  const hay = Object.keys(p).filter(k => !/(^|_)id$|^created|^next_follow/.test(k)).map(k => p[k]).filter(v => v != null).join(' ').toLowerCase();
+  const base = Object.keys(p).filter(k => !/(^|_)id$|^created|^next_follow/.test(k)).map(k => p[k]).filter(v => v != null).join(' ');
+  const hay = (base + ' ' + linkedText(p)).toLowerCase();
   return toks.every(t => SYN[t] ? p[SYN[t][0]] === SYN[t][1] : hay.includes(t));
 }
 function matches(p, c){
@@ -194,8 +199,19 @@ function render(){
     rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) &&
       (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
+    const hits = q ? cons.filter(c => { const h = [c.name, c.phone, c.email, c.kind, c.preferred_location, c.preferred_category, c.notes].filter(Boolean).join(' ').toLowerCase(); return q.split(/\s+/).filter(Boolean).every(t => h.includes(t)); }).slice(0, 6) : [];
+    const chHtml = hits.length ? '<div class="sub" style="grid-column:1/-1"><b>Contacts matching your search</b></div>' + hits.map(c => {
+      const linked = props.filter(x => x.seller_id === c.id || x.buyer_id === c.id || x.broker_id === c.id).length;
+      return '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
+        '<div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : 'No phone') + (c.email ? ' · ' + esc(c.email) : '') + '</div>' +
+        ((c.budget_min || c.budget_max) ? '<div class="price">' + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' : '') +
+        '<div class="sub">' + esc([c.preferred_category, c.preferred_location].filter(Boolean).join(' · ')) + '</div>' +
+        (c.notes ? '<div class="sub">' + esc(c.notes) + '</div>' : '') +
+        '<div class="sub">' + linked + ' linked propert' + (linked === 1 ? 'y' : 'ies') + (linked ? ' (shown below)' : '') + '</div>' +
+        '<div class="row"><button class="btn ghost" onclick="goContact(\'' + c.id + '\')">Open contact</button>' + ((c.kind === 'buyer' || c.kind === 'tenant') ? '<button class="btn ghost" onclick="matchFor(\'' + c.id + '\')">Matching properties</button>' : '') + '</div></div>';
+    }).join('') + '<div class="sub" style="grid-column:1/-1"><b>Properties</b></div>' : '';
     if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties';
-    $('#list').innerHTML = rows.length ? rows.map(p =>
+    $('#list').innerHTML = chHtml + (rows.length ? rows.map(p =>
       '<div class="card p' + p.priority + '"><h3>' + esc(p.title) + '</h3>' +
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
       fuLabel(p) + '<div class="price">' + fmt(p.price) + '</div>' +
@@ -203,7 +219,7 @@ function render(){
       contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) + leadLine(p) +
       (p.notes ? '<div class="sub">' + esc(p.notes) + '</div>' : '') +
       '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button><button class="btn wa" onclick="openShare(\'' + p.id + '\')">WhatsApp</button></div></div>'
-    ).join('') : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>';
+    ).join('') : (props.length ? '<div class="empty">No properties match this search.</div>' : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>'));
   } else {
     rows = cons.filter(c => (!d || c.kind === d) && (!q || JSON.stringify(c).toLowerCase().includes(q)));
     rows.sort(SORT[so] || SORT.priority);
@@ -213,7 +229,7 @@ function render(){
       ((c.budget_min || c.budget_max) ? '<div class="price">' + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' : '') +
       '<div class="sub">' + esc([c.preferred_category, c.preferred_location].filter(Boolean).join(' · ')) + '</div>' +
       (c.notes ? '<div class="sub">' + esc(c.notes) + '</div>' : '') +
-      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + c.id + '\')">Edit</button></div></div>'
+      '<div class="row"><button class="btn ghost" onclick="openForm(\'' + c.id + '\')">Edit</button>' + (nLinked(c) ? '<button class="btn ghost" onclick="goProps(\'' + c.id + '\')">Properties (' + nLinked(c) + ')</button>' : '') + '</div></div>'
     ).join('') : '<div class="empty">No contacts yet. Add buyers, sellers, tenants and landlords here.</div>';
   }
 }
@@ -283,6 +299,10 @@ function renderDash(){
     '<div class="card wide"><h3>Top brokers</h3>' + (bro.length ? bro.map(b => '<div class="hot"><b>' + esc(b.n) + '</b><span class="sub">' + b.leads + ' leads · ' + b.won + ' closed</span><span class="price">' + fmt(b.earn) + '</span></div>').join('') : '<div class="sub">Add a broker contact, then pick them on a property to track their share.</div>') + '</div>' +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
 }
+function nLinked(c){ return props.filter(x => x.seller_id === c.id || x.buyer_id === c.id || x.broker_id === c.id).length; }
+function goContact(id){ const c = cons.find(x => x.id === id); setTab('cons'); $('#q').value = c.name; render(); }
+function goProps(id){ const c = cons.find(x => x.id === id); setTab('props'); $('#q').value = c.name; render(); }
+function matchFor(id){ document.querySelectorAll('#bar input, #bar select').forEach(e => { if (e.id !== 'so') e.value = ''; }); $('#mb').value = id; render(); }
 function leadLine(p){
   const a = [];
   if (p.lead_source) a.push('Source: ' + p.lead_source);
