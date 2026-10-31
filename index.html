@@ -61,10 +61,17 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .s-pipe{background:#4b4bb0}.s-recv{background:#1b6b4a}.s-bro{background:#7a4bb3}.s-net{background:#0b5f6e}
 .stat.m .big{font-size:28px}
 .btn.wa{background:#1b7a49}
-.thumb{width:100%;height:150px;object-fit:cover;border-radius:6px;margin-bottom:8px;display:block}
+.thumb{width:100%;height:auto;max-height:260px;object-fit:contain;background:#e3eaf0;border-radius:6px;margin-bottom:8px;display:block;cursor:pointer}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}.ph{position:relative}
-.ph img{width:100%;height:90px;object-fit:cover;border-radius:6px;display:block}
+.ph img{width:100%;height:100px;object-fit:contain;background:#e3eaf0;border-radius:6px;display:block}
 .ph button{position:absolute;top:4px;right:4px;border:0;border-radius:99px;width:22px;height:22px;background:rgba(20,32,43,.78);color:#fff;cursor:pointer;line-height:1}
+#lbx{width:100vw;max-width:100vw;height:100vh;max-height:100vh;margin:0;padding:0;border:0;border-radius:0;background:rgba(10,16,22,.95);color:#fff}
+#lbx[open]{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.lbm{display:flex;align-items:center;justify-content:center;gap:8px;width:100%}
+.lbm img{max-width:calc(100vw - 110px);max-height:84vh;object-fit:contain}
+.lbn{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:99px;width:44px;height:44px;font-size:26px;cursor:pointer;flex:none}
+.lbc{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:99px;width:40px;height:40px;font-size:24px;cursor:pointer}
+.lbt{margin-top:10px;font-size:13px;color:#cdd7e0}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -99,6 +106,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 </div>
 
 <dialog id="dlg"></dialog>
+<dialog id="lbx"></dialog>
 
 <script>
 const RECOVERY = /type=recovery/.test(location.hash);
@@ -428,25 +436,70 @@ function waText(p, c){
   L.push('', 'Interested? Reply to this message and we will arrange a visit.');
   return L.join('\n');
 }
-function openShare(id, cid){
+let WA = {urls: {}, cache: {}};
+async function openShare(id, cid){
   const p = props.find(x => x.id === id);
   const cl = cons.filter(c => c.phone && (c.kind === 'buyer' || c.kind === 'tenant'));
   const mt = cl.filter(c => matches(p, c)), rest = cl.filter(c => !matches(p, c));
   const o = c => '<option value="' + c.id + '"' + (c.id === cid ? ' selected' : '') + '>' + esc(c.name) + '</option>';
+  const ph = files.filter(f => f.property_id === id && f.kind === 'photo').sort((a, b) => a.created_at > b.created_at ? 1 : -1);
+  WA = {urls: {}, cache: {}};
+  if (ph.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(ph.map(f => f.path), 3600); (r.data || []).forEach(x => { if (x.signedUrl) WA.urls[x.path] = x.signedUrl; }); }
+  const photoHtml = ph.length
+    ? '<label>Photos to send (tick the ones you want)</label><div class="pgrid">' + ph.map((f, i) => '<div class="ph"><img loading="lazy" alt="" style="cursor:pointer" src="' + esc(WA.urls[f.path] || '') + '" onclick="this.nextElementSibling.click()"><input class="wph" type="checkbox" value="' + esc(f.path) + '"' + (i < 5 ? ' checked' : '') + ' onchange="if(this.checked)wfetch(this.value)" style="position:absolute;top:5px;left:5px;width:18px;height:18px;padding:0"></div>').join('') + '</div>' +
+      '<div class="row"><button id="wsb" class="btn wa" onclick="sharePhotos()">Share with photos</button><button class="btn ghost" onclick="addLinks()">Add photo links to message</button><button class="btn ghost" onclick="dlPhotos()">Download photos</button></div>' +
+      '<div class="sub">On a phone, “Share with photos” opens the share sheet with the photos attached: choose WhatsApp there. On a computer, download the photos and attach them in WhatsApp Web, or add links to the message.</div>'
+    : '<div class="sub" style="margin-top:8px">No photos on this property yet. Add some under Files.</div>';
   $('#dlg').innerHTML = '<h3 style="margin-top:0">Share on WhatsApp</h3>' +
     '<label>Send to</label><select id="wto" onchange="waPick(\'' + id + '\')"><option value="">Choose contact in WhatsApp</option>' +
     (mt.length ? '<optgroup label="Matching clients">' + mt.map(o).join('') + '</optgroup>' : '') +
     (rest.length ? '<optgroup label="Other buyers and tenants">' + rest.map(o).join('') + '</optgroup>' : '') + '</select>' +
-    '<label>Message (you can edit it)</label><textarea id="wmsg" rows="9">' + esc(waText(p, cons.find(c => c.id === cid))) + '</textarea>' +
-    '<div class="row"><button class="btn wa" onclick="sendWa()">Open WhatsApp</button><button class="btn ghost" onclick="copyWa()">Copy text</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
+    '<label>Message (you can edit it)</label><textarea id="wmsg" rows="9">' + esc(waText(p, cons.find(c => c.id === cid))) + '</textarea>' + photoHtml +
+    '<div class="row"><button class="btn wa" onclick="sendWa()">Send text on WhatsApp</button><button class="btn ghost" onclick="copyWa()">Copy text</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   if (!$('#dlg').open) $('#dlg').showModal();
+  document.querySelectorAll('.wph:checked').forEach(c => wfetch(c.value));
+}
+function wsel(){ return Array.from(document.querySelectorAll('.wph:checked')).map(x => x.value).slice(0, 10); }
+function wfetch(path){
+  if (WA.cache[path] || !WA.urls[path]) return;
+  WA.cache[path] = 'loading';
+  fetch(WA.urls[path]).then(r => r.blob()).then(b => { const f0 = files.find(x => x.path === path); WA.cache[path] = new File([b], f0 ? f0.name : 'photo.jpg', {type: b.type || 'image/jpeg'}); }).catch(() => { delete WA.cache[path]; });
+}
+function sharePhotos(){
+  const sel = wsel();
+  if (!sel.length) { alert('Tick at least one photo first.'); return; }
+  const fl = sel.map(k => WA.cache[k]).filter(x => x && x !== 'loading');
+  if (fl.length < sel.length) { sel.forEach(wfetch); alert('The photos are still loading. Try again in a few seconds.'); return; }
+  const data = {files: fl, text: $('#wmsg').value};
+  if (!navigator.canShare || !navigator.canShare(data)) { alert('This browser cannot attach photos directly. It works on phones. On a computer, use Download photos or Add photo links to message.'); return; }
+  navigator.share(data).catch(e => { if (e.name !== 'AbortError') alert('Could not share: ' + e.message); });
+}
+async function addLinks(){
+  const sel = wsel().slice(0, 5);
+  if (!sel.length) { alert('Tick at least one photo first.'); return; }
+  const r = await sb.storage.from(BUCKET).createSignedUrls(sel, 7 * 86400);
+  const u = (r.data || []).map(x => x.signedUrl).filter(Boolean);
+  if (!u.length) { alert('Could not create the links.'); return; }
+  $('#wmsg').value = $('#wmsg').value.replace(/\n\nPhotos \(links valid 7 days\):[\s\S]*$/, '') + '\n\nPhotos (links valid 7 days):\n' + u.join('\n');
+}
+async function dlPhotos(){
+  const sel = wsel();
+  if (!sel.length) { alert('Tick at least one photo first.'); return; }
+  try {
+    for (const k of sel) {
+      let f = WA.cache[k];
+      if (!f || f === 'loading') { const b = await (await fetch(WA.urls[k])).blob(); const f0 = files.find(x => x.path === k); f = new File([b], f0 ? f0.name : 'photo.jpg', {type: b.type || 'image/jpeg'}); }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+  } catch (e) { alert('Could not download the photos: ' + e.message); }
 }
 function waPick(id){ const c = cons.find(x => x.id === $('#wto').value); $('#wmsg').value = waText(props.find(x => x.id === id), c); }
 function sendWa(){ const c = cons.find(x => x.id === $('#wto').value); const to = c ? waPhone(c.phone) : ''; window.open('https://wa.me/' + to + '?text=' + encodeURIComponent($('#wmsg').value), '_blank'); }
 function copyWa(){ const t = $('#wmsg').value; if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => alert('Message copied')); else { $('#wmsg').select(); document.execCommand('copy'); } }
 function kb(n){ n = Number(n) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
 function safeName(n){ return String(n).replace(/[^A-Za-z0-9._-]/g, '_'); }
-function thumbHtml(p){ const u = thumbs[firstPhoto[p.id]]; return u ? '<img class="thumb" loading="lazy" alt="" src="' + esc(u) + '">' : ''; }
+function thumbHtml(p){ const u = thumbs[firstPhoto[p.id]]; return u ? '<img class="thumb" loading="lazy" alt="Property photo" title="Click to view all photos" src="' + esc(u) + '" onclick="viewPhotos(\'' + p.id + '\', 0)">' : ''; }
 async function loadThumbs(){
   firstPhoto = {}; thumbs = {};
   files.filter(f => f.kind === 'photo').sort((a, b) => a.created_at > b.created_at ? 1 : -1).forEach(f => { if (!firstPhoto[f.property_id]) firstPhoto[f.property_id] = f.path; });
@@ -477,7 +530,7 @@ async function openFiles(id){
     '<div class="row"><label class="btn" style="display:inline-block;margin:0;color:#fff;cursor:pointer">+ Photos<input type="file" accept="image/*" multiple hidden onchange="upFiles(\'' + id + '\', \'photo\', this)"></label>' +
     '<label class="btn ghost" style="display:inline-block;margin:0;color:var(--ink);cursor:pointer">+ Documents<input type="file" multiple hidden onchange="upFiles(\'' + id + '\', \'document\', this)"></label><span class="sub" id="upst"></span></div>' +
     '<h4 style="margin:16px 0 6px">Photos (' + ph.length + ')</h4>' +
-    (ph.length ? '<div class="pgrid">' + ph.map(f => '<div class="ph"><a href="' + esc(urls[f.path] || '#') + '" target="_blank" rel="noopener"><img loading="lazy" alt="' + esc(f.name) + '" src="' + esc(urls[f.path] || '') + '"></a><button title="Delete" onclick="delFile(\'' + f.id + '\')">×</button></div>').join('') + '</div>' : '<div class="sub">No photos yet.</div>') +
+    (ph.length ? '<div class="pgrid">' + ph.map((f, i) => '<div class="ph"><img loading="lazy" style="cursor:pointer" alt="' + esc(f.name) + '" src="' + esc(urls[f.path] || '') + '" onclick="viewPhotos(\'' + id + '\', ' + i + ')"><button title="Delete" onclick="delFile(\'' + f.id + '\')">×</button></div>').join('') + '</div>' : '<div class="sub">No photos yet.</div>') +
     '<h4 style="margin:16px 0 4px">Documents (' + dc.length + ')</h4>' +
     (dc.length ? dc.map(f => '<div class="hot"><b>' + esc(f.name) + '</b><span class="sub">' + kb(f.size) + '</span><span style="margin-left:auto;display:flex;gap:8px"><a href="' + esc(urls[f.path] || '#') + '" target="_blank" rel="noopener">Open</a><button class="lnk" style="color:#b3402f" onclick="delFile(\'' + f.id + '\')">Delete</button></span></div>').join('') : '<div class="sub">No documents yet.</div>') +
     '<div class="row" style="margin-top:14px"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
@@ -512,6 +565,25 @@ async function delFile(fid){
   if (r.error) { alert(r.error.message); return; }
   await load(); openFiles(f.property_id);
 }
+let LB = {urls: [], i: 0, x: 0};
+async function viewPhotos(pid, i){
+  const ph = files.filter(f => f.property_id === pid && f.kind === 'photo').sort((a, b) => a.created_at > b.created_at ? 1 : -1);
+  if (!ph.length) return;
+  const r = await sb.storage.from(BUCKET).createSignedUrls(ph.map(f => f.path), 3600);
+  const m = {}; (r.data || []).forEach(x => { if (x.signedUrl) m[x.path] = x.signedUrl; });
+  LB.urls = ph.map(f => m[f.path]).filter(Boolean); LB.i = i || 0;
+  if (!LB.urls.length) return;
+  showLb();
+}
+function showLb(){
+  const d = $('#lbx');
+  d.innerHTML = '<button class="lbc" title="Close" onclick="$(\'#lbx\').close()">×</button><div class="lbm"><button class="lbn" onclick="lbGo(-1)">‹</button><img alt="" src="' + esc(LB.urls[LB.i]) + '"><button class="lbn" onclick="lbGo(1)">›</button></div><div class="lbt">' + (LB.i + 1) + ' / ' + LB.urls.length + '</div>';
+  d.ontouchstart = e => { LB.x = e.touches[0].clientX; };
+  d.ontouchend = e => { const dx = e.changedTouches[0].clientX - LB.x; if (Math.abs(dx) > 50) lbGo(dx < 0 ? 1 : -1); };
+  if (!d.open) d.showModal();
+}
+function lbGo(n){ LB.i = (LB.i + n + LB.urls.length) % LB.urls.length; showLb(); }
+document.addEventListener('keydown', e => { if (!$('#lbx').open) return; if (e.key === 'ArrowLeft') lbGo(-1); if (e.key === 'ArrowRight') lbGo(1); });
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
   cur = id ? list.find(x => x.id === id) : {priority: 2, assigned_to: uid};
