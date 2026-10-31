@@ -142,7 +142,7 @@ function buildBar(){
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['followup', 'Follow-up date'], ['newest', 'Newest']], keep.o) + '</select>';
     const kv = id => ($('#' + id) || {}).value || '';
     const nb = (id, ph) => '<input class="n" id="' + id + '" type="number" min="0" placeholder="' + ph + '" oninput="render()" value="' + esc(kv(id)) + '">';
-    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select><select id="fag" onchange="render()">' + opts([['', 'Any owner'], ['none', 'Unassigned'], ...team.map(m => [m.user_id, nm(m) + (m.user_id === uid ? ' (me)' : '')])], kv('fag')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
+    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select>' + (myRole === 'owner' ? '<select id="fag" onchange="render()">' + opts([['', 'Any owner'], ['none', 'Unassigned'], ...team.map(m => [m.user_id, nm(m) + (m.user_id === uid ? ' (me)' : '')])], kv('fag')) + '</select>' : '') + '<input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
@@ -292,6 +292,7 @@ function renderDash(){
   const noDate = props.filter(p => PEND.includes(p.status) && !p.next_follow_up).length;
   const hot = props.filter(p => PEND.includes(p.status) && p.priority === 1).slice(0, 5);
   $('#list').innerHTML =
+    (myRole === 'agent' ? '<div class="sub wide">Showing only the leads assigned to you.</div>' : '') +
     stat('Total leads', total, 's-total', month + ' added this month') +
     stat('Pending', pend, 's-pend', n(['available']) + ' available · ' + n(['negotiating']) + ' negotiating · ' + n(['on hold']) + ' on hold') +
     stat('Closed', won, 's-won', rate) +
@@ -309,7 +310,7 @@ function renderDash(){
     '<div class="card wide"><h3>Why deals are lost</h3>' + (lost ? rs.filter(x => x[1]).sort((a, b) => b[1] - a[1]).map(x => '<div class="brow"><div class="bl" style="width:180px">' + esc(x[0]) + '</div><div class="seg"><span style="width:' + (x[1] * 100 / rmax) + '%;background:' + COL.lost + '">' + x[1] + '</span></div></div>').join('') : '<div class="sub">No lost deals yet.</div>') + '</div>' +
     '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
     '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
-    '<div class="card wide"><h3>Team performance</h3>' + (ag.length ? agHtml : '<div class="sub">Run the team setup SQL to start assigning leads to agents.</div>') + '</div>' +
+    (myRole === 'owner' ? '<div class="card wide"><h3>Team performance</h3>' + (ag.length ? agHtml : '<div class="sub">No team members yet.</div>') + '</div>' : '') +
     '<div class="card wide"><h3>Top brokers</h3>' + (bro.length ? bro.map(b => '<div class="hot"><b>' + esc(b.n) + '</b><span class="sub">' + b.leads + ' leads · ' + b.won + ' closed</span><span class="price">' + fmt(b.earn) + '</span></div>').join('') : '<div class="sub">Add a broker contact, then pick them on a property to track their share.</div>') + '</div>' +
     teamHtml +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
@@ -419,7 +420,7 @@ function openForm(id){
     const v = cur[f[0]] == null ? '' : cur[f[0]];
     let inp;
     if (f[2] === 'sel') inp = '<select data-k="' + f[0] + '">' + opts(f[3], v) + '</select>';
-    else if (f[2] === 'agent') inp = '<select data-k="' + f[0] + '"><option value="">Unassigned</option>' + team.map(m => '<option value="' + m.user_id + '"' + (m.user_id === v ? ' selected' : '') + '>' + esc(nm(m)) + '</option>').join('') + '</select>';
+    else if (f[2] === 'agent') inp = '<select data-k="' + f[0] + '">' + (myRole === 'owner' ? '<option value="">Unassigned</option>' : '') + team.filter(m => myRole === 'owner' || m.user_id === uid).map(m => '<option value="' + m.user_id + '"' + (m.user_id === v ? ' selected' : '') + '>' + esc(nm(m)) + '</option>').join('') + '</select>';
     else if (f[2] === 'broker') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.filter(c => c.kind === 'broker').map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
     else if (f[2] === 'contact') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.kind + ')</option>').join('') + '</select>';
     else if (f[2] === 'area') inp = '<textarea rows="3" data-k="' + f[0] + '">' + esc(v) + '</textarea>';
