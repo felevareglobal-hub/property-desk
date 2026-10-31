@@ -93,13 +93,13 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let org = null, props = [], cons = [], notes = [], tab = 'dash', cur = null;
+let org = null, props = [], cons = [], notes = [], team = [], uid = null, myRole = '', tab = 'dash', cur = null;
 const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
 const SRC = ['broker','website','referral','walk-in','social media','other'];
 const REASONS = ['price too high','chose another property','client not responding','loan or finance issue','legal or documents','changed plans','other'];
-const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['next_follow_up','Next follow-up','date'],['lead_source','Lead source','sel',[['', 'Not set'], ...SRC]],['lost_reason','Lost reason (if lost)','sel',[['', 'Not set'], ...REASONS]],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
+const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['assigned_to','Assigned to','agent'],['next_follow_up','Next follow-up','date'],['lead_source','Lead source','sel',[['', 'Not set'], ...SRC]],['lost_reason','Lost reason (if lost)','sel',[['', 'Not set'], ...REASONS]],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
 const CF = [['name','Name','text'],['kind','Type','sel',['buyer','seller','tenant','landlord','broker']],['phone','Phone','text'],['email','Email','text'],['budget_min','Budget min (₹)','number'],['budget_max','Budget max (₹)','number'],['preferred_location','Preferred location','text'],['preferred_category','Preferred category','sel',['',...CATS]],['priority','Priority','sel',PRI],['notes','Notes','area']];
 
 function fmt(n){ if (n == null || n === '') return '—'; n = Number(n); if (n >= 1e7) return '₹' + (n/1e7).toFixed(2) + ' Cr'; if (n >= 1e5) return '₹' + (n/1e5).toFixed(2) + ' L'; return '₹' + n.toLocaleString('en-IN'); }
@@ -116,14 +116,16 @@ async function signOut(){ await sb.auth.signOut(); show('auth'); }
 async function boot(){
   const s = await sb.auth.getSession();
   if (!s.data.session) { show('auth'); return; }
+  uid = s.data.session.user.id;
   const m = await sb.from('re_members').select('org_id').eq('user_id', s.data.session.user.id).limit(1);
   if (m.data && m.data.length) org = m.data[0].org_id;
   else { const r = await sb.rpc('re_bootstrap'); if (r.error) { alert(r.error.message); return; } org = r.data; }
   show('app'); await load();
 }
 async function load(){
-  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*'), sb.from('re_notes').select('*')]);
-  props = r[0].data || []; cons = r[1].data || []; notes = r[2].data || [];
+  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*'), sb.from('re_notes').select('*'), sb.rpc('re_team')]);
+  props = r[0].data || []; cons = r[1].data || []; notes = r[2].data || []; team = r[3].data || [];
+  const mine = team.find(m => m.user_id === uid); myRole = mine ? mine.role : '';
   buildBar(); render();
 }
 
@@ -140,7 +142,7 @@ function buildBar(){
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['price_asc', 'Price: low to high'], ['price_desc', 'Price: high to low'], ['location', 'Location A–Z'], ['followup', 'Follow-up date'], ['newest', 'Newest']], keep.o) + '</select>';
     const kv = id => ($('#' + id) || {}).value || '';
     const nb = (id, ph) => '<input class="n" id="' + id + '" type="number" min="0" placeholder="' + ph + '" oninput="render()" value="' + esc(kv(id)) + '">';
-    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
+    h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select><select id="fag" onchange="render()">' + opts([['', 'Any owner'], ['none', 'Unassigned'], ...team.map(m => [m.user_id, nm(m) + (m.user_id === uid ? ' (me)' : '')])], kv('fag')) + '</select><input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
     h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
@@ -155,7 +157,7 @@ const SYN = {rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented:
   commercial: ['category', 'commercial'], shop: ['category', 'commercial'], office: ['category', 'commercial'], industrial: ['category', 'industrial'], warehouse: ['category', 'industrial'], factory: ['category', 'industrial'], land: ['category', 'land'], plot: ['category', 'land']};
 function linkedText(p){
   const c = ['seller_id', 'buyer_id', 'broker_id'].map(k => cname(p[k])).filter(Boolean).map(x => [x.name, x.phone, x.email].filter(Boolean).join(' ')).join(' ');
-  return c + ' ' + notes.filter(n => n.property_id === p.id).map(n => n.body).join(' ');
+  return c + ' ' + agentName(p.assigned_to) + ' ' + notes.filter(n => n.property_id === p.id).map(n => n.body).join(' ');
 }
 function smart(p, q){
   const toks = q.toLowerCase().replace(/(\d)\s*(bhk|rk)/g, '$1$2').split(/\s+/).filter(Boolean);
@@ -191,12 +193,12 @@ function render(){
   const q = (($('#q') || {}).value || '').toLowerCase(), d = ($('#fd') || {}).value, so = ($('#so') || {}).value || 'priority';
   let rows;
   if (tab === 'props') {
-    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, sr = ($('#fsr') || {}).value, mb = cname(($('#mb') || {}).value);
+    const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, sr = ($('#fsr') || {}).value, ag = ($('#fag') || {}).value, mb = cname(($('#mb') || {}).value);
     const num = id => { const v = ($('#' + id) || {}).value; return v ? Number(v) : null; };
     const loc = (($('#fl') || {}).value || '').toLowerCase().trim();
     const sm = [num('smin'), num('smax')], pr = [num('pmin'), num('pmax')], fr = [num('fmin'), num('fmax')];
     const inR = (v, r, k) => (r[0] == null || (v != null && v >= r[0] * k)) && (r[1] == null || (v != null && v <= r[1] * k));
-    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) &&
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) && (!ag || (ag === 'none' ? !p.assigned_to : p.assigned_to === ag)) &&
       (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
     const hits = q ? cons.filter(c => { const h = [c.name, c.phone, c.email, c.kind, c.preferred_location, c.preferred_category, c.notes].filter(Boolean).join(' ').toLowerCase(); return q.split(/\s+/).filter(Boolean).every(t => h.includes(t)); }).slice(0, 6) : [];
@@ -273,6 +275,17 @@ function renderDash(){
   const noR = props.filter(p => p.status === 'lost' && !p.lost_reason).length;
   if (noR) rs.push(['no reason recorded', noR]);
   const rmax = Math.max(1, ...rs.map(x => x[1]));
+  const ag = team.map(m => ({id: m.user_id, n: nm(m) + (m.user_id === uid ? ' (you)' : ''), r: props.filter(p => p.assigned_to === m.user_id)}));
+  const un = props.filter(p => !p.assigned_to);
+  if (un.length) ag.push({id: 'none', n: 'Unassigned', r: un});
+  const amax = Math.max(1, ...ag.map(x => x.r.length));
+  const agHtml = ag.map(x => {
+    const w = x.r.filter(p => p.status === 'closed').length, l = x.r.filter(p => p.status === 'lost').length, pn = x.r.filter(p => PEND.includes(p.status)).length;
+    return '<div class="brow"><div class="bl" style="width:120px">' + esc(x.n) + '</div>' + segBar(x.r, amax) + '<div class="bn">' + x.r.length + '</div><button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="goAgent(\'' + x.id + '\')">View</button></div>' +
+      '<div class="sub" style="margin:-4px 0 8px 128px">' + pn + ' pending · ' + w + ' closed · ' + l + ' lost · ' + fmt(sum(x.r, p => p.commission_received)) + ' received</div>';
+  }).join('');
+  const teamHtml = '<div class="card wide"><h3>Team</h3>' + team.map(m => '<span class="chip" style="background:' + (m.role === 'owner' ? '#2457a6' : '#5d6b78') + '">' + esc(nm(m)) + ' · ' + m.role + '</span>').join('') +
+    (myRole === 'owner' ? '<div class="row"><input id="tm" type="email" placeholder="Teammate email (they must sign up first)" style="flex:1 1 240px;padding:8px;border:1px solid var(--line);border-radius:6px"><button class="btn" onclick="addMember()">Add to team</button></div>' : '') + '</div>';
   const live = props.filter(p => p.next_follow_up && p.status !== 'closed' && p.status !== 'lost');
   const odL = live.filter(p => p.next_follow_up < dayStr(0)), tdL = live.filter(p => p.next_follow_up === dayStr(0));
   const due = odL.concat(tdL).sort((a, b) => a.next_follow_up.localeCompare(b.next_follow_up)).slice(0, 8);
@@ -296,15 +309,27 @@ function renderDash(){
     '<div class="card wide"><h3>Why deals are lost</h3>' + (lost ? rs.filter(x => x[1]).sort((a, b) => b[1] - a[1]).map(x => '<div class="brow"><div class="bl" style="width:180px">' + esc(x[0]) + '</div><div class="seg"><span style="width:' + (x[1] * 100 / rmax) + '%;background:' + COL.lost + '">' + x[1] + '</span></div></div>').join('') : '<div class="sub">No lost deals yet.</div>') + '</div>' +
     '<div class="card wide"><h3>New leads, last 6 months</h3>' + trend() + '</div>' +
     '<div class="card wide"><h3>High-priority pending</h3>' + (hot.length ? hot.map(p => '<div class="hot"><b>' + esc(p.title) + '</b><span class="sub">' + esc(p.location || '') + '</span><span class="price">' + fmt(p.price) + '</span></div>').join('') : '<div class="sub">None yet. Set a property’s priority to High to see it here.</div>') + '</div>' +
+    '<div class="card wide"><h3>Team performance</h3>' + (ag.length ? agHtml : '<div class="sub">Run the team setup SQL to start assigning leads to agents.</div>') + '</div>' +
     '<div class="card wide"><h3>Top brokers</h3>' + (bro.length ? bro.map(b => '<div class="hot"><b>' + esc(b.n) + '</b><span class="sub">' + b.leads + ' leads · ' + b.won + ' closed</span><span class="price">' + fmt(b.earn) + '</span></div>').join('') : '<div class="sub">Add a broker contact, then pick them on a property to track their share.</div>') + '</div>' +
+    teamHtml +
     '<div class="card wide"><h3>Contacts</h3>' + cc('buyer', 'buyers', '#2457a6') + cc('seller', 'sellers', '#218a5b') + cc('tenant', 'tenants', '#0f6e8c') + cc('landlord', 'landlords', '#7a4bb3') + cc('broker', 'brokers', '#b26a00') + '</div>';
 }
 function nLinked(c){ return props.filter(x => x.seller_id === c.id || x.buyer_id === c.id || x.broker_id === c.id).length; }
 function goContact(id){ const c = cons.find(x => x.id === id); setTab('cons'); $('#q').value = c.name; render(); }
 function goProps(id){ const c = cons.find(x => x.id === id); setTab('props'); $('#q').value = c.name; render(); }
 function matchFor(id){ document.querySelectorAll('#bar input, #bar select').forEach(e => { if (e.id !== 'so') e.value = ''; }); $('#mb').value = id; render(); }
+function nm(m){ const n = String(m.email || '').split('@')[0]; return n ? n.charAt(0).toUpperCase() + n.slice(1) : 'Agent'; }
+function agentName(id){ const m = team.find(x => x.user_id === id); return m ? nm(m) : ''; }
+function goAgent(id){ setTab('props'); document.querySelectorAll('#bar input, #bar select').forEach(e => { if (e.id !== 'so') e.value = ''; }); $('#fag').value = id; render(); }
+async function addMember(){
+  const e = $('#tm').value.trim(); if (!e) return;
+  const r = await sb.rpc('re_add_member', {member_email: e});
+  if (r.error) { alert(r.error.message); return; }
+  await load();
+}
 function leadLine(p){
   const a = [];
+  if (p.assigned_to && agentName(p.assigned_to)) a.push('Owner: ' + agentName(p.assigned_to));
   if (p.lead_source) a.push('Source: ' + p.lead_source);
   if (p.status === 'lost' && p.lost_reason) a.push('Lost: ' + p.lost_reason);
   return a.length ? '<div class="sub">' + esc(a.join(' · ')) + '</div>' : '';
@@ -388,12 +413,13 @@ function sendWa(){ const c = cons.find(x => x.id === $('#wto').value); const to 
 function copyWa(){ const t = $('#wmsg').value; if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => alert('Message copied')); else { $('#wmsg').select(); document.execCommand('copy'); } }
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
-  cur = id ? list.find(x => x.id === id) : {priority: 2};
+  cur = id ? list.find(x => x.id === id) : {priority: 2, assigned_to: uid};
   let h = '<h3 style="margin-top:0">' + (id ? 'Edit' : 'Add') + (tab === 'props' ? ' property' : ' contact') + '</h3><div class="two">';
   fields.forEach(f => {
     const v = cur[f[0]] == null ? '' : cur[f[0]];
     let inp;
     if (f[2] === 'sel') inp = '<select data-k="' + f[0] + '">' + opts(f[3], v) + '</select>';
+    else if (f[2] === 'agent') inp = '<select data-k="' + f[0] + '"><option value="">Unassigned</option>' + team.map(m => '<option value="' + m.user_id + '"' + (m.user_id === v ? ' selected' : '') + '>' + esc(nm(m)) + '</option>').join('') + '</select>';
     else if (f[2] === 'broker') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.filter(c => c.kind === 'broker').map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>';
     else if (f[2] === 'contact') inp = '<select data-k="' + f[0] + '"><option value="">None</option>' + cons.map(c => '<option value="' + c.id + '"' + (c.id === v ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.kind + ')</option>').join('') + '</select>';
     else if (f[2] === 'area') inp = '<textarea rows="3" data-k="' + f[0] + '">' + esc(v) + '</textarea>';
