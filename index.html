@@ -112,6 +112,7 @@ const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
 const BUCKET = 'property-files';
+const LIM = {photo: 5, document: 10, count: 30, total: 50}; // MB per photo, MB per document, files per property, MB per property
 const SRC = ['broker','website','referral','walk-in','social media','other'];
 const REASONS = ['price too high','chose another property','client not responding','loan or finance issue','legal or documents','changed plans','other'];
 const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['assigned_to','Assigned to','agent'],['next_follow_up','Next follow-up','date'],['lead_source','Lead source','sel',[['', 'Not set'], ...SRC]],['lost_reason','Lost reason (if lost)','sel',[['', 'Not set'], ...REASONS]],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
@@ -315,7 +316,7 @@ function renderDash(){
     return '<div class="brow"><div class="bl" style="width:120px">' + esc(x.n) + '</div>' + segBar(x.r, amax) + '<div class="bn">' + x.r.length + '</div><button class="btn ghost" style="padding:3px 9px;font-size:12px" onclick="goAgent(\'' + x.id + '\')">View</button></div>' +
       '<div class="sub" style="margin:-4px 0 8px 128px">' + pn + ' pending · ' + w + ' closed · ' + l + ' lost · ' + fmt(sum(x.r, p => p.commission_received)) + ' received</div>';
   }).join('');
-  const teamHtml = '<div class="card wide"><h3>Team</h3>' + team.map(m => '<span class="chip" style="background:' + (m.role === 'owner' ? '#2457a6' : '#5d6b78') + '">' + esc(nm(m)) + ' · ' + m.role + '</span>').join('') +
+  const teamHtml = '<div class="card wide"><h3>Team</h3>' + team.map(m => '<span class="chip" style="background:' + (m.role === 'owner' ? '#2457a6' : '#5d6b78') + '">' + esc(nm(m)) + ' · ' + m.role + '</span>').join('') + '<div class="sub">Files stored: ' + files.length + ' · ' + kb(files.reduce((a, f) => a + (Number(f.size) || 0), 0)) + '</div>' +
     (myRole === 'owner' ? '<div class="row"><input id="tm" type="email" placeholder="Teammate email (they must sign up first)" style="flex:1 1 240px;padding:8px;border:1px solid var(--line);border-radius:6px"><button class="btn" onclick="addMember()">Add to team</button></div>' : '') + '</div>';
   const live = props.filter(p => p.next_follow_up && p.status !== 'closed' && p.status !== 'lost');
   const odL = live.filter(p => p.next_follow_up < dayStr(0)), tdL = live.filter(p => p.next_follow_up === dayStr(0));
@@ -472,7 +473,7 @@ async function openFiles(id){
   const fl = files.filter(f => f.property_id === id).sort((a, b) => a.created_at > b.created_at ? 1 : -1);
   const ph = fl.filter(f => f.kind === 'photo'), dc = fl.filter(f => f.kind === 'document'), urls = {};
   if (fl.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(fl.map(f => f.path), 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
-  $('#dlg').innerHTML = '<h3 style="margin-top:0">' + esc(p.title) + '</h3><div class="sub">Photos and documents (max 15 MB each)</div>' +
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">' + esc(p.title) + '</h3><div class="sub">Photos up to ' + LIM.photo + ' MB, documents up to ' + LIM.document + ' MB · ' + fl.length + ' of ' + LIM.count + ' files · ' + kb(fl.reduce((a, f) => a + (Number(f.size) || 0), 0)) + ' of ' + LIM.total + ' MB used</div>' +
     '<div class="row"><label class="btn" style="display:inline-block;margin:0;color:#fff;cursor:pointer">+ Photos<input type="file" accept="image/*" multiple hidden onchange="upFiles(\'' + id + '\', \'photo\', this)"></label>' +
     '<label class="btn ghost" style="display:inline-block;margin:0;color:var(--ink);cursor:pointer">+ Documents<input type="file" multiple hidden onchange="upFiles(\'' + id + '\', \'document\', this)"></label><span class="sub" id="upst"></span></div>' +
     '<h4 style="margin:16px 0 6px">Photos (' + ph.length + ')</h4>' +
@@ -484,18 +485,22 @@ async function openFiles(id){
 }
 async function upFiles(pid, kind, inp){
   const list = Array.from(inp.files || []); if (!list.length) return;
-  const st = $('#upst'); let n = 0;
+  const st = $('#upst'); let n = 0, added = 0;
   for (const f of list) {
     st.textContent = 'Uploading ' + (n + 1) + ' of ' + list.length + '…';
     let blob = f, name = f.name;
     if (kind === 'photo') { blob = await shrink(f); if (blob.type === 'image/jpeg') name = name.replace(/\.[^.]+$/, '') + '.jpg'; }
-    if (blob.size > 15 * 1024 * 1024) { alert(f.name + ' is larger than 15 MB and was skipped.'); continue; }
+    const mine = files.filter(x => x.property_id === pid);
+    const used = mine.reduce((a, x) => a + (Number(x.size) || 0), 0) + added;
+    if (mine.length + n >= LIM.count) { alert('This property already has ' + LIM.count + ' files, which is the maximum.'); break; }
+    if (blob.size > LIM[kind] * 1048576) { alert(f.name + ' is ' + kb(blob.size) + ', over the ' + LIM[kind] + ' MB limit for ' + kind + 's. It was skipped.'); continue; }
+    if (used + blob.size > LIM.total * 1048576) { alert('Not enough room: each property can hold ' + LIM.total + ' MB of files. ' + f.name + ' was skipped.'); continue; }
     const path = org + '/' + pid + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + safeName(name);
     const u = await sb.storage.from(BUCKET).upload(path, blob, {contentType: blob.type || f.type || 'application/octet-stream'});
     if (u.error) { alert(u.error.message); break; }
     const r = await sb.from('re_files').insert({org_id: org, property_id: pid, kind: kind, name: name, path: path, size: blob.size});
     if (r.error) { await sb.storage.from(BUCKET).remove([path]); alert(r.error.message); break; }
-    n++;
+    n++; added += blob.size;
   }
   await load(); openFiles(pid);
 }
