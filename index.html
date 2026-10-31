@@ -3,6 +3,7 @@
 <title>Property Desk</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#eef2f5;--ink:#14202b;--mute:#5d6b78;--card:#fff;--line:#d7dfe6;--acc:#0f6e8c;--hi:#c9822b;--ok:#2e7d5b}
 *{box-sizing:border-box}body{margin:0;font:15px/1.45 'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
@@ -97,7 +98,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
   <header>
     <h1>Property Desk</h1>
     <div class="tabs"><button id="t-dash" class="on" onclick="setTab('dash')">Dashboard</button><button id="t-props" onclick="setTab('props')">Properties</button><button id="t-cons" onclick="setTab('cons')">Contacts</button></div>
-    <button class="lnk" onclick="signOut()">Sign out</button>
+    <button class="lnk" onclick="openIO()">Import / Export</button><button class="lnk" onclick="signOut()">Sign out</button>
   </header>
   <main>
     <div class="bar" id="bar"></div>
@@ -584,6 +585,169 @@ function showLb(){
 }
 function lbGo(n){ LB.i = (LB.i + n + LB.urls.length) % LB.urls.length; showLb(); }
 document.addEventListener('keydown', e => { if (!$('#lbx').open) return; if (e.key === 'ArrowLeft') lbGo(-1); if (e.key === 'ArrowRight') lbGo(1); });
+const norm = h => String(h == null ? '' : h).toLowerCase().replace(/[^a-z0-9]/g, '');
+const pad2 = n => String(n).padStart(2, '0');
+const AL = {
+  p: {title: ['title','name','property','propertyname','propertytitle'], deal: ['deal','dealtype','transaction','for'], category: ['category','propertytype','propertycategory'], bhk: ['bhk','bedrooms','configuration'], location: ['location','area','locality','address'], city: ['city','town'], size: ['size','sizesqft','sqft','areasqft','carpetarea','builtuparea'], floor: ['floor','floorno','floornumber'], price: ['price','priceinr','value','amount','askingprice','expectedprice','rent'], status: ['status','stage'], priority: ['priority'], assigned: ['assignedto','agent','assignee','handledby'], followup: ['nextfollowup','followup','followupdate','nextfollowupdate'], source: ['leadsource','source'], lost: ['lostreason','reasonlost','reason'], seller: ['seller','sellername','owner','ownername','landlord'], sellerphone: ['sellerphone','ownerphone','sellermobile','ownermobile','landlordphone'], buyer: ['buyer','buyername','tenant','tenantname','client','clientname'], buyerphone: ['buyerphone','tenantphone','clientphone','buyermobile'], broker: ['broker','brokername'], brokerphone: ['brokerphone','brokermobile'], share: ['brokershare','brokersharepercent','sharepercent'], expected: ['expectedcommission','commissionexpected','commission'], received: ['receivedcommission','commissionreceived'], notes: ['notes','remarks','comments','note']},
+  c: {name: ['name','fullname','contactname','clientname'], kind: ['type','kind','contacttype','role'], phone: ['phone','mobile','phoneno','mobileno','contactno','whatsapp','phonenumber'], email: ['email','emailid','mail'], bmin: ['budgetmin','minbudget'], bmax: ['budgetmax','maxbudget','budget'], loc: ['preferredlocation','location','preferredarea','area'], cat: ['preferredcategory','category','propertytype'], priority: ['priority'], notes: ['notes','remarks','comments','note']}
+};
+const DEAL = {sell: 'sell', selling: 'sell', sale: 'sell', forsale: 'sell', buy: 'buy', buying: 'buy', purchase: 'buy', rent: 'rent', rental: 'rent', lease: 'rent', forrent: 'rent'};
+const CATM = {residential: 'residential', flat: 'residential', apartment: 'residential', house: 'residential', villa: 'residential', commercial: 'commercial', shop: 'commercial', office: 'commercial', industrial: 'industrial', warehouse: 'industrial', factory: 'industrial', land: 'land', plot: 'land', other: 'other'};
+const STATM = {available: 'available', open: 'available', active: 'available', new: 'available', negotiating: 'negotiating', negotiation: 'negotiating', closed: 'closed', won: 'closed', executed: 'closed', sold: 'closed', done: 'closed', lost: 'lost', onhold: 'on hold', hold: 'on hold'};
+const KINDM = {buyer: 'buyer', seller: 'seller', tenant: 'tenant', landlord: 'landlord', broker: 'broker', agent: 'broker', dealer: 'broker', owner: 'seller', client: 'buyer'};
+const PRIM = {high: 1, h: 1, '1': 1, medium: 2, med: 2, m: 2, '2': 2, low: 3, l: 3, '3': 3};
+let IMP = null;
+
+function pick(row, list){ for (const k of Object.keys(row)) { if (list.includes(norm(k))) { const v = row[k]; if (v !== '' && v != null) return v; } } return ''; }
+function pNum(v){ if (v === '' || v == null) return null; if (typeof v === 'number') return v; const n = parseFloat(String(v).replace(/[,\s]/g, '')); return Number.isNaN(n) ? NaN : n; }
+function pMoney(v){
+  if (v === '' || v == null) return null; if (typeof v === 'number') return v;
+  const t = String(v).toLowerCase().replace(/[₹,\s]/g, '').replace(/rs\.?|inr/g, ''); if (!t) return null;
+  const m = t.match(/^([\d.]+)(crores|crore|cr|lakhs|lakh|lac|l|k)?$/); if (!m) return NaN;
+  let n = parseFloat(m[1]); if (Number.isNaN(n)) return NaN;
+  const u = m[2]; if (u) { if (u[0] === 'c') n *= 1e7; else if (u === 'k') n *= 1e3; else n *= 1e5; }
+  return n;
+}
+function ymd(y, m, d){ y = Number(y); m = Number(m); d = Number(d); const t = new Date(Date.UTC(y, m - 1, d)); if (t.getUTCFullYear() !== y || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return NaN; return y + '-' + pad2(m) + '-' + pad2(d); }
+function pDate(v){
+  if (v === '' || v == null) return null;
+  if (typeof v === 'number') { if (v < 20000 || v > 80000) return NaN; const d = new Date(Math.round((v - 25569) * 86400000)); return ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+  const t = String(v).trim(); let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return ymd(m[1], m[2], m[3]);
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/); if (m) return ymd(m[3].length === 2 ? '20' + m[3] : m[3], m[2], m[1]);
+  return NaN;
+}
+function pBhk(v){ let t = String(v == null ? '' : v).toUpperCase().replace(/\s+/g, ''); if (!t) return ''; if (/^\d$/.test(t)) t += 'BHK'; if (/^[5-9](BHK)?\+?$/.test(t)) return '5BHK+'; return BHKS.includes(t) ? t : NaN; }
+const sTxt = v => (v == null ? '' : String(v)).trim();
+
+function buildProp(row){
+  const g = k => pick(row, AL.p[k]), e = [], w = [];
+  const title = sTxt(g('title')); if (!title) e.push('Title is missing');
+  const deal = DEAL[norm(g('deal'))]; if (!deal) e.push('Deal must be Selling, Buying or Rental');
+  let cat = 'residential';
+  if (norm(g('category'))) { cat = CATM[norm(g('category'))]; if (!cat) e.push('Unknown category "' + g('category') + '"'); } else w.push('Category missing, set to residential');
+  const bhk = pBhk(g('bhk')); if (Number.isNaN(bhk)) w.push('BHK "' + g('bhk') + '" not recognised, left blank');
+  const num = (k, f, label) => { const v = f(g(k)); if (Number.isNaN(v)) { w.push(label + ' "' + g(k) + '" not understood, left blank'); return null; } return v; };
+  const size = num('size', pNum, 'Size'), floor = num('floor', pNum, 'Floor'), price = num('price', pMoney, 'Price'), share = num('share', pNum, 'Broker share'), exp = num('expected', pMoney, 'Expected commission'), rec = num('received', pMoney, 'Received commission'), fu = num('followup', pDate, 'Follow-up date');
+  let status = 'available'; if (norm(g('status'))) { status = STATM[norm(g('status'))]; if (!status) { w.push('Status "' + g('status') + '" not recognised, set to available'); status = 'available'; } }
+  const pr = norm(g('priority')) ? (PRIM[norm(g('priority'))] || 2) : 2;
+  const src = norm(g('source')) ? (SRC.find(x => norm(x) === norm(g('source'))) || 'other') : null;
+  const lost = norm(g('lost')) ? (REASONS.find(x => norm(x) === norm(g('lost'))) || 'other') : null;
+  let assigned = uid;
+  if (myRole === 'owner') {
+    const a = sTxt(g('assigned')).toLowerCase();
+    if (a === 'unassigned') assigned = null;
+    else if (a) { const m = team.find(t => nm(t).toLowerCase() === a || String(t.email).toLowerCase() === a || String(t.email).toLowerCase().split('@')[0] === a); if (m) assigned = m.user_id; else w.push('Agent "' + a + '" not found, assigned to you'); }
+  }
+  const lk = {}, rent = deal === 'rent';
+  if (sTxt(g('seller'))) lk.seller = {name: sTxt(g('seller')), phone: sTxt(g('sellerphone')) || null, kind: rent ? 'landlord' : 'seller'};
+  if (sTxt(g('buyer'))) lk.buyer = {name: sTxt(g('buyer')), phone: sTxt(g('buyerphone')) || null, kind: rent ? 'tenant' : 'buyer'};
+  if (sTxt(g('broker'))) lk.broker = {name: sTxt(g('broker')), phone: sTxt(g('brokerphone')) || null, kind: 'broker'};
+  if (share != null && (share < 0 || share > 100)) { w.push('Broker share must be 0 to 100, left blank'); }
+  return {errs: e, warns: w, lk: lk, dup: (title + '|' + sTxt(g('location'))).toLowerCase(),
+    rec: {title: title, deal_type: deal, category: cat, bhk: bhk || null, location: sTxt(g('location')) || null, city: sTxt(g('city')) || null, area_sqft: size, floor: floor == null ? null : Math.round(floor), price: price, status: status, priority: pr, assigned_to: assigned, next_follow_up: fu, lead_source: src, lost_reason: lost, broker_share_pct: (share != null && share >= 0 && share <= 100) ? share : null, commission_expected: exp, commission_received: rec, notes: sTxt(g('notes')) || null}};
+}
+function buildCon(row){
+  const g = k => pick(row, AL.c[k]), e = [], w = [];
+  const name = sTxt(g('name')); if (!name) e.push('Name is missing');
+  const kind = KINDM[norm(g('kind'))]; if (!kind) e.push('Type must be Buyer, Seller, Tenant, Landlord or Broker');
+  const num = (k, label) => { const v = pMoney(g(k)); if (Number.isNaN(v)) { w.push(label + ' "' + g(k) + '" not understood, left blank'); return null; } return v; };
+  const bmin = num('bmin', 'Budget min'), bmax = num('bmax', 'Budget max');
+  const cat = norm(g('cat')) ? (CATM[norm(g('cat'))] || null) : null;
+  const phone = sTxt(g('phone')) || null;
+  const d = String(phone || '').replace(/\D/g, '').slice(-10);
+  return {errs: e, warns: w, lk: {}, dup: d.length >= 7 ? d : name.toLowerCase(),
+    rec: {name: name, kind: kind, phone: phone, email: sTxt(g('email')) || null, budget_min: bmin, budget_max: bmax, preferred_location: sTxt(g('loc')) || null, preferred_category: cat, priority: norm(g('priority')) ? (PRIM[norm(g('priority'))] || 2) : 2, notes: sTxt(g('notes')) || null}};
+}
+
+async function impRead(){
+  const f = $('#imf').files[0]; if (!f) return;
+  if (!window.XLSX) { alert('The Excel library did not load. Check your internet connection and refresh the page.'); return; }
+  const kind = $('#imk').value, skip = $('#imd').checked, out = $('#imr');
+  out.innerHTML = '<div class="sub">Reading file…</div>';
+  let rows;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), {type: 'array'});
+    const want = kind === 'props' ? 'properties' : 'contacts';
+    rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames.find(n => norm(n) === want) || wb.SheetNames[0]], {defval: ''});
+  } catch (err) { out.innerHTML = '<div class="err">Could not read this file: ' + esc(err.message) + '</div>'; return; }
+  if (!rows.length) { out.innerHTML = '<div class="err">No rows found. The first row must contain column headings.</div>'; return; }
+  if (rows.length > 2000) { out.innerHTML = '<div class="err">This file has ' + rows.length + ' rows. Please import 2,000 rows or fewer at a time.</div>'; return; }
+  const seen = new Set();
+  if (skip) (kind === 'props' ? props.map(p => (p.title + '|' + (p.location || '')).toLowerCase()) : cons.map(c => { const d = String(c.phone || '').replace(/\D/g, '').slice(-10); return d.length >= 7 ? d : c.name.toLowerCase(); })).forEach(k => seen.add(k));
+  const ok = [], issues = []; let skipped = 0;
+  rows.forEach((row, i) => {
+    const r = kind === 'props' ? buildProp(row) : buildCon(row), n = i + 2;
+    if (r.errs.length) { skipped++; issues.push('Row ' + n + ' skipped: ' + r.errs.join('; ')); return; }
+    if (skip && seen.has(r.dup)) { skipped++; issues.push('Row ' + n + ' skipped: already exists'); return; }
+    seen.add(r.dup); r.warns.forEach(x => issues.push('Row ' + n + ': ' + x)); ok.push(r);
+  });
+  const need = {};
+  if (kind === 'props') ok.forEach(x => { x.keys = {}; Object.keys(x.lk).forEach(fd => { const c = x.lk[fd], k = c.name.toLowerCase(), ex = cons.find(y => y.name.toLowerCase() === k); if (ex) x.rec[fd + '_id'] = ex.id; else { x.keys[fd] = k; if (!need[k]) need[k] = c; } }); });
+  IMP = {kind: kind, rows: ok, need: need};
+  const nn = Object.keys(need).length, label = kind === 'props' ? 'properties' : 'contacts';
+  out.innerHTML = '<div style="margin-top:12px"><b>' + ok.length + '</b> ' + label + ' ready to import' + (skipped ? ' · <b>' + skipped + '</b> skipped' : '') + (nn ? ' · <b>' + nn + '</b> new contact' + (nn === 1 ? '' : 's') + ' will be created' : '') + '</div>' +
+    (issues.length ? '<div class="sub" style="max-height:130px;overflow:auto;margin-top:6px">' + issues.slice(0, 12).map(esc).join('<br>') + (issues.length > 12 ? '<br>+ ' + (issues.length - 12) + ' more' : '') + '</div>' : '') +
+    (ok.length ? '<div class="row"><button id="imgo" class="btn" onclick="impGo()">Import ' + ok.length + ' ' + label + '</button></div>' : '');
+}
+async function impGo(){
+  const I = IMP; if (!I || !I.rows.length) return;
+  const btn = $('#imgo'); btn.disabled = true; btn.textContent = 'Importing…';
+  try {
+    const map = {}, nk = Object.keys(I.need || {});
+    if (nk.length) {
+      const r = await sb.from('re_contacts').insert(nk.map(k => Object.assign({org_id: org}, I.need[k]))).select('id,name');
+      if (r.error) throw r.error;
+      (r.data || []).forEach(c => { map[c.name.toLowerCase()] = c.id; });
+    }
+    const recs = I.rows.map(x => { const r = Object.assign({org_id: org}, x.rec); Object.keys(x.keys || {}).forEach(fd => { r[fd + '_id'] = map[x.keys[fd]] || null; }); return r; });
+    const t = I.kind === 'props' ? 're_properties' : 're_contacts';
+    for (let i = 0; i < recs.length; i += 200) { const r = await sb.from(t).insert(recs.slice(i, i + 200)); if (r.error) throw r.error; }
+    IMP = null; await load();
+    $('#imr').innerHTML = '<div style="margin-top:12px"><b>Done.</b> ' + recs.length + ' ' + (I.kind === 'props' ? 'properties' : 'contacts') + ' imported.</div>';
+  } catch (err) {
+    alert('Import stopped: ' + (err.message || err) + '\nNothing more was imported. Rows already saved stay in the app.');
+    btn.disabled = false; btn.textContent = 'Try again';
+  }
+}
+
+function expProp(p){
+  const s = cname(p.seller_id) || {}, b = cname(p.buyer_id) || {}, br = cname(p.broker_id) || {}, v = x => x == null ? '' : Number(x);
+  return {'Title': p.title, 'Deal': {sell: 'Selling', buy: 'Buying', rent: 'Rental'}[p.deal_type], 'Category': p.category, 'BHK': p.bhk || '', 'Location': p.location || '', 'City': p.city || '', 'Size (sq ft)': v(p.area_sqft), 'Floor': p.floor == null ? '' : p.floor, 'Price (₹)': v(p.price), 'Status': p.status, 'Priority': {1: 'High', 2: 'Medium', 3: 'Low'}[p.priority] || 'Medium', 'Assigned To': agentName(p.assigned_to), 'Next Follow-up': p.next_follow_up || '', 'Lead Source': p.lead_source || '', 'Lost Reason': p.lost_reason || '', 'Seller': s.name || '', 'Seller Phone': s.phone || '', 'Buyer': b.name || '', 'Buyer Phone': b.phone || '', 'Broker': br.name || '', 'Broker Phone': br.phone || '', 'Broker Share %': v(p.broker_share_pct), 'Expected Commission': v(p.commission_expected), 'Received Commission': v(p.commission_received), 'Notes': p.notes || '', 'Added On': (p.created_at || '').slice(0, 10)};
+}
+function expCon(c){
+  return {'Name': c.name, 'Type': c.kind, 'Phone': c.phone || '', 'Email': c.email || '', 'Budget Min': c.budget_min == null ? '' : Number(c.budget_min), 'Budget Max': c.budget_max == null ? '' : Number(c.budget_max), 'Preferred Location': c.preferred_location || '', 'Preferred Category': c.preferred_category || '', 'Priority': {1: 'High', 2: 'Medium', 3: 'Low'}[c.priority] || 'Medium', 'Notes': c.notes || '', 'Added On': (c.created_at || '').slice(0, 10)};
+}
+function exportXlsx(kind){
+  if (!window.XLSX) { alert('The Excel library did not load. Check your internet connection and refresh the page.'); return; }
+  const rows = kind === 'props' ? props.map(expProp) : cons.map(expCon);
+  if (!rows.length) { alert('There is nothing to export yet.'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Object.keys(rows[0]).map(k => ({wch: Math.max(12, Math.min(34, k.length + 4))}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, kind === 'props' ? 'Properties' : 'Contacts');
+  XLSX.writeFile(wb, (kind === 'props' ? 'properties-' : 'contacts-') + dayStr(0) + '.xlsx');
+}
+function dlTemplate(){
+  if (!window.XLSX) { alert('The Excel library did not load. Check your internet connection and refresh the page.'); return; }
+  const P = [{'Title': '2BHK Sea View Flat', 'Deal': 'Rental', 'Category': 'Residential', 'BHK': '2BHK', 'Location': 'Andheri West', 'City': 'Mumbai', 'Size (sq ft)': 950, 'Floor': 3, 'Price (₹)': 45000, 'Status': 'Available', 'Priority': 'High', 'Assigned To': '', 'Next Follow-up': dayStr(3), 'Lead Source': 'Referral', 'Lost Reason': '', 'Seller': 'Anita Rao', 'Seller Phone': '9876543210', 'Buyer': '', 'Buyer Phone': '', 'Broker': '', 'Broker Phone': '', 'Broker Share %': '', 'Expected Commission': 45000, 'Received Commission': '', 'Notes': 'Example row: replace or delete it'}];
+  const C = [{'Name': 'Ramesh Shah', 'Type': 'Buyer', 'Phone': '9812345678', 'Email': 'ramesh@example.com', 'Budget Min': '50 L', 'Budget Max': '1.2 Cr', 'Preferred Location': 'Andheri', 'Preferred Category': 'Residential', 'Priority': 'High', 'Notes': 'Example row: replace or delete it'}];
+  const G = [['Property Desk import guide', ''], ['Deal', 'Selling, Buying, Rental'], ['Category', CATS.join(', ')], ['BHK', BHKS.join(', ')], ['Status', 'Available, Negotiating, Closed, Lost, On hold'], ['Priority', 'High, Medium, Low'], ['Lead Source', SRC.join(', ')], ['Lost Reason', REASONS.join(', ')], ['Contact Type', 'Buyer, Seller, Tenant, Landlord, Broker'], ['Prices and budgets', 'Plain numbers, or text such as 85 L or 1.2 Cr'], ['Dates', 'dd/mm/yyyy or yyyy-mm-dd'], ['Assigned To', 'An agent name or email. Blank means you.'], ['Seller, Buyer, Broker', 'Matched to existing contacts by name. New names are created automatically.'], ['Required columns', 'Properties: Title, Deal. Contacts: Name, Type.']];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(P), 'Properties');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(C), 'Contacts');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(G), 'Guide');
+  XLSX.writeFile(wb, 'property-desk-template.xlsx');
+}
+function openIO(){
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">Import / Export</h3>' +
+    '<div class="sub"><b>Export to Excel</b></div><div class="row"><button class="btn" onclick="exportXlsx(\'props\')">Properties (' + props.length + ')</button><button class="btn" onclick="exportXlsx(\'cons\')">Contacts (' + cons.length + ')</button></div>' +
+    '<div class="sub" style="margin-top:18px"><b>Import from Excel or CSV</b></div>' +
+    '<div class="row"><button class="btn ghost" onclick="dlTemplate()">Download template</button></div>' +
+    '<label>What are you importing?</label><select id="imk" onchange="impRead()"><option value="props">Properties</option><option value="cons">Contacts</option></select>' +
+    '<label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input id="imd" type="checkbox" checked style="width:auto;padding:0" onchange="impRead()"> Skip rows that already exist</label>' +
+    '<label>Choose your file (.xlsx, .xls or .csv)</label><input id="imf" type="file" accept=".xlsx,.xls,.csv" onchange="impRead()">' +
+    '<div id="imr"></div><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
+  IMP = null; if (!$('#dlg').open) $('#dlg').showModal();
+}
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
   cur = id ? list.find(x => x.id === id) : {priority: 2, assigned_to: uid};
