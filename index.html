@@ -90,6 +90,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .card.k-buyer .price{color:#4A3A8C}.card.k-seller .price{color:#A04D00}.card.k-tenant .price{color:#17613F}.card.k-landlord .price{color:#0F5B58}.card.k-broker .price{color:#6B5200}
 .tag.k-buyer{background:#D9D2F6;color:#4A3A8C}.tag.k-seller{background:#FFD9B8;color:#7A3A00}.tag.k-tenant{background:#BFE8D2;color:#17613F}.tag.k-landlord{background:#BFE5E2;color:#0F5B58}.tag.k-broker{background:#FBEAA8;color:#6B5200}
 .letter{grid-column:1/-1;font-weight:800;font-size:15px;color:var(--acc);border-bottom:1px solid var(--line);padding:4px 2px;margin-top:4px}
+.vid{margin-bottom:10px}.vid video{width:100%;max-height:230px;background:#000;border-radius:6px;display:block}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -138,7 +139,7 @@ const PRI = [[1,'High'],[2,'Medium'],[3,'Low']];
 const CATS = ['residential','commercial','industrial','land','other'];
 const BHKS = ['1RK','1BHK','2BHK','3BHK','4BHK','5BHK+'];
 const BUCKET = 'property-files';
-const LIM = {photo: 5, document: 10, count: 30, total: 50}; // MB per photo, MB per document, files per property, MB per property
+const LIM = {photo: 5, document: 10, video: 40, count: 30, total: 150}; // MB per photo, document, video; files per property; MB per property
 const SRC = ['broker','website','referral','walk-in','social media','other'];
 const REASONS = ['price too high','chose another property','client not responding','loan or finance issue','legal or documents','changed plans','other'];
 const PF = [['title','Title','text'],['deal_type','Deal','sel',[['sell','Selling'],['buy','Buying'],['rent','Rental']]],['category','Category','sel',CATS],['bhk','BHK','sel',[['', 'Not applicable'], ...BHKS]],['location','Location / area','text'],['city','City','text'],['area_sqft','Size (sq ft)','number'],['floor','Floor (0 = ground)','number'],['price','Price (₹)','number'],['status','Status','sel',['available','negotiating','closed','lost','on hold']],['priority','Priority','sel',PRI],['assigned_to','Assigned to','agent'],['next_follow_up','Next follow-up','date'],['lead_source','Lead source','sel',[['', 'Not set'], ...SRC]],['lost_reason','Lost reason (if lost)','sel',[['', 'Not set'], ...REASONS]],['seller_id','Seller / owner','contact'],['buyer_id','Buyer / tenant','contact'],['broker_id','Broker (if any)','broker'],['broker_share_pct','Broker share (% of commission)','number'],['commission_expected','Expected commission (₹)','number'],['commission_received','Received commission (₹)','number'],['notes','Notes','area']];
@@ -547,18 +548,20 @@ async function openShare(id, cid){
   const mt = cl.filter(c => matches(p, c)), rest = cl.filter(c => !matches(p, c));
   const o = c => '<option value="' + c.id + '"' + (c.id === cid ? ' selected' : '') + '>' + esc(c.name) + '</option>';
   const ph = files.filter(f => f.property_id === id && f.kind === 'photo').sort((a, b) => a.created_at > b.created_at ? 1 : -1);
+  const vds = files.filter(f => f.property_id === id && (f.kind === 'video' || f.kind === 'link'));
   WA = {urls: {}, cache: {}};
   if (ph.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(ph.map(f => f.path), 3600); (r.data || []).forEach(x => { if (x.signedUrl) WA.urls[x.path] = x.signedUrl; }); }
-  const photoHtml = ph.length
-    ? '<label>Photos to send (tick the ones you want)</label><div class="pgrid">' + ph.map((f, i) => '<div class="ph"><img loading="lazy" alt="" style="cursor:pointer" src="' + esc(WA.urls[f.path] || '') + '" onclick="this.nextElementSibling.click()"><input class="wph" type="checkbox" value="' + esc(f.path) + '"' + (i < 5 ? ' checked' : '') + ' onchange="if(this.checked)wfetch(this.value)" style="position:absolute;top:5px;left:5px;width:18px;height:18px;padding:0"></div>').join('') + '</div>' +
-      '<div class="row"><button id="wsb" class="btn wa" onclick="sharePhotos()">Share with photos</button><button class="btn ghost" onclick="addLinks()">Add photo links to message</button><button class="btn ghost" onclick="dlPhotos()">Download photos</button></div>' +
-      '<div class="sub">On a phone, “Share with photos” opens the share sheet with the photos attached: choose WhatsApp there. On a computer, download the photos and attach them in WhatsApp Web, or add links to the message.</div>'
-    : '<div class="sub" style="margin-top:8px">No photos on this property yet. Add some under Files.</div>';
+  const phGrid = ph.length ? '<label>Photos to send (tick the ones you want)</label><div class="pgrid">' + ph.map((f, i) => '<div class="ph"><img loading="lazy" alt="" style="cursor:pointer" src="' + esc(WA.urls[f.path] || '') + '" onclick="this.nextElementSibling.click()"><input class="wph" type="checkbox" value="' + esc(f.path) + '"' + (i < 5 ? ' checked' : '') + ' onchange="if(this.checked)wfetch(this.value)" style="position:absolute;top:5px;left:5px;width:18px;height:18px;padding:0"></div>').join('') + '</div>' : '';
+  const vdList = vds.length ? '<label>Videos to include as links (they are not attached)</label>' + vds.map(f => '<label style="display:flex;gap:8px;align-items:center;color:var(--ink);margin:4px 0"><input class="wvd" type="checkbox" value="' + f.id + '" style="width:auto;padding:0"> ' + esc(f.name) + '</label>').join('') : '';
+  const btns = (ph.length || vds.length)
+    ? '<div class="row">' + (ph.length ? '<button id="wsb" class="btn wa" onclick="sharePhotos()">Share with photos</button>' : '') + '<button class="btn ghost" onclick="addLinks()">Add photo / video links to message</button>' + (ph.length ? '<button class="btn ghost" onclick="dlPhotos()">Download photos</button>' : '') + '</div>' +
+      '<div class="sub">On a phone, “Share with photos” opens the share sheet with the photos attached: choose WhatsApp there. Videos and links are added to the message as links. On a computer, download the photos and attach them in WhatsApp Web, or add links to the message.</div>'
+    : '<div class="sub" style="margin-top:8px">No photos or videos on this property yet. Add some under Files.</div>';
   $('#dlg').innerHTML = '<h3 style="margin-top:0">Share on WhatsApp</h3>' +
     '<label>Send to</label><select id="wto" onchange="waPick(\'' + id + '\')"><option value="">Choose contact in WhatsApp</option>' +
     (mt.length ? '<optgroup label="Matching clients">' + mt.map(o).join('') + '</optgroup>' : '') +
     (rest.length ? '<optgroup label="Other buyers and tenants">' + rest.map(o).join('') + '</optgroup>' : '') + '</select>' +
-    '<label>Message (you can edit it)</label><textarea id="wmsg" rows="9">' + esc(waText(p, cons.find(c => c.id === cid))) + '</textarea>' + photoHtml +
+    '<label>Message (you can edit it)</label><textarea id="wmsg" rows="9">' + esc(waText(p, cons.find(c => c.id === cid))) + '</textarea>' + phGrid + vdList + btns +
     '<div class="row"><button class="btn wa" onclick="sendWa()">Send text on WhatsApp</button><button class="btn ghost" onclick="copyWa()">Copy text</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   if (!$('#dlg').open) $('#dlg').showModal();
   document.querySelectorAll('.wph:checked').forEach(c => wfetch(c.value));
@@ -580,11 +583,15 @@ function sharePhotos(){
 }
 async function addLinks(){
   const sel = wsel().slice(0, 5);
-  if (!sel.length) { alert('Tick at least one photo first.'); return; }
-  const r = await sb.storage.from(BUCKET).createSignedUrls(sel, 7 * 86400);
-  const u = (r.data || []).map(x => x.signedUrl).filter(Boolean);
+  const vf = Array.from(document.querySelectorAll('.wvd:checked')).map(x => files.find(f => f.id === x.value)).filter(Boolean).slice(0, 3);
+  if (!sel.length && !vf.length) { alert('Tick at least one photo or video first.'); return; }
+  const u = [];
+  if (sel.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(sel, 7 * 86400); (r.data || []).forEach(x => { if (x.signedUrl) u.push(x.signedUrl); }); }
+  const vs = vf.filter(f => f.kind === 'video');
+  if (vs.length) { const r2 = await sb.storage.from(BUCKET).createSignedUrls(vs.map(f => f.path), 7 * 86400); const m = {}; (r2.data || []).forEach(x => { if (x.signedUrl) m[x.path] = x.signedUrl; }); vs.forEach(f => { if (m[f.path]) u.push(m[f.path]); }); }
+  vf.filter(f => f.kind === 'link').forEach(f => u.push(f.path));
   if (!u.length) { alert('Could not create the links.'); return; }
-  $('#wmsg').value = $('#wmsg').value.replace(/\n\nPhotos \(links valid 7 days\):[\s\S]*$/, '') + '\n\nPhotos (links valid 7 days):\n' + u.join('\n');
+  $('#wmsg').value = $('#wmsg').value.replace(/\n\nMedia links[\s\S]*$/, '') + '\n\nMedia links (uploaded files stay valid for 7 days):\n' + u.join('\n');
 }
 async function dlPhotos(){
   const sel = wsel();
@@ -628,23 +635,40 @@ function shrink(f){
 async function openFiles(id){
   const p = props.find(x => x.id === id);
   const fl = files.filter(f => f.property_id === id).sort((a, b) => a.created_at > b.created_at ? 1 : -1);
-  const ph = fl.filter(f => f.kind === 'photo'), dc = fl.filter(f => f.kind === 'document'), urls = {};
-  if (fl.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(fl.map(f => f.path), 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
-  $('#dlg').innerHTML = '<h3 style="margin-top:0">' + esc(p.title) + '</h3><div class="sub">Photos up to ' + LIM.photo + ' MB, documents up to ' + LIM.document + ' MB · ' + fl.length + ' of ' + LIM.count + ' files · ' + kb(fl.reduce((a, f) => a + (Number(f.size) || 0), 0)) + ' of ' + LIM.total + ' MB used</div>' +
+  const ph = fl.filter(f => f.kind === 'photo'), dc = fl.filter(f => f.kind === 'document'), vd = fl.filter(f => f.kind === 'video'), lk = fl.filter(f => f.kind === 'link'), urls = {};
+  const st = fl.filter(f => f.kind !== 'link');
+  if (st.length) { const r = await sb.storage.from(BUCKET).createSignedUrls(st.map(f => f.path), 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
+  const del = f => '<button class="lnk" style="color:#b3402f" onclick="delFile(\'' + f.id + '\')">Delete</button>';
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">' + esc(p.title) + '</h3><div class="sub">Photos up to ' + LIM.photo + ' MB, documents ' + LIM.document + ' MB, videos ' + LIM.video + ' MB · ' + fl.length + ' of ' + LIM.count + ' files · ' + kb(fl.reduce((a, f) => a + (Number(f.size) || 0), 0)) + ' of ' + LIM.total + ' MB used</div>' +
     '<div class="row"><label class="btn" style="display:inline-block;margin:0;color:#fff;cursor:pointer">+ Photos<input type="file" accept="image/*" multiple hidden onchange="upFiles(\'' + id + '\', \'photo\', this)"></label>' +
-    '<label class="btn ghost" style="display:inline-block;margin:0;color:var(--ink);cursor:pointer">+ Documents<input type="file" multiple hidden onchange="upFiles(\'' + id + '\', \'document\', this)"></label><span class="sub" id="upst"></span></div>' +
+    '<label class="btn ghost" style="display:inline-block;margin:0;color:var(--ink);cursor:pointer">+ Documents<input type="file" multiple hidden onchange="upFiles(\'' + id + '\', \'document\', this)"></label>' +
+    '<label class="btn ghost" style="display:inline-block;margin:0;color:var(--ink);cursor:pointer">+ Video<input type="file" accept="video/*" hidden onchange="upFiles(\'' + id + '\', \'video\', this)"></label>' +
+    '<button class="btn ghost" onclick="addVideoLink(\'' + id + '\')">+ Video link</button><span class="sub" id="upst"></span></div>' +
     '<h4 style="margin:16px 0 6px">Photos (' + ph.length + ')</h4>' +
     (ph.length ? '<div class="pgrid">' + ph.map((f, i) => '<div class="ph"><img loading="lazy" style="cursor:pointer" alt="' + esc(f.name) + '" src="' + esc(urls[f.path] || '') + '" onclick="viewPhotos(\'' + id + '\', ' + i + ')"><button title="Delete" onclick="delFile(\'' + f.id + '\')">×</button></div>').join('') + '</div>' : '<div class="sub">No photos yet.</div>') +
+    '<h4 style="margin:16px 0 6px">Videos (' + (vd.length + lk.length) + ')</h4>' +
+    (vd.length + lk.length ? vd.map(f => '<div class="vid"><video controls preload="metadata" playsinline src="' + esc(urls[f.path] || '') + '#t=0.1"></video><div class="hot"><b>' + esc(f.name) + '</b><span class="sub">' + kb(f.size) + '</span><span style="margin-left:auto">' + del(f) + '</span></div></div>').join('') +
+      lk.map(f => '<div class="hot"><b>' + esc(f.name) + '</b><span class="sub">link</span><span style="margin-left:auto;display:flex;gap:8px"><a href="' + esc(f.path) + '" target="_blank" rel="noopener noreferrer">Open</a>' + del(f) + '</span></div>').join('') : '<div class="sub">No videos yet. Upload a short clip, or add a YouTube or Google Drive link for longer ones.</div>') +
     '<h4 style="margin:16px 0 4px">Documents (' + dc.length + ')</h4>' +
-    (dc.length ? dc.map(f => '<div class="hot"><b>' + esc(f.name) + '</b><span class="sub">' + kb(f.size) + '</span><span style="margin-left:auto;display:flex;gap:8px"><a href="' + esc(urls[f.path] || '#') + '" target="_blank" rel="noopener">Open</a><button class="lnk" style="color:#b3402f" onclick="delFile(\'' + f.id + '\')">Delete</button></span></div>').join('') : '<div class="sub">No documents yet.</div>') +
+    (dc.length ? dc.map(f => '<div class="hot"><b>' + esc(f.name) + '</b><span class="sub">' + kb(f.size) + '</span><span style="margin-left:auto;display:flex;gap:8px"><a href="' + esc(urls[f.path] || '#') + '" target="_blank" rel="noopener">Open</a>' + del(f) + '</span></div>').join('') : '<div class="sub">No documents yet.</div>') +
     '<div class="row" style="margin-top:14px"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   if (!$('#dlg').open) $('#dlg').showModal();
+}
+async function addVideoLink(pid){
+  const url = (prompt('Paste the video link (YouTube, Google Drive, Vimeo, etc.)') || '').trim();
+  if (!url) return;
+  if (!/^https?:\/\/\S+$/i.test(url)) { alert('Please paste a full link that starts with http:// or https://'); return; }
+  const name = (prompt('Give it a short title', 'Video walkthrough') || 'Video link').trim().slice(0, 80);
+  if (files.filter(x => x.property_id === pid).length >= LIM.count) { alert('This property already has ' + LIM.count + ' files, which is the maximum.'); return; }
+  const r = await sb.from('re_files').insert({org_id: org, property_id: pid, kind: 'link', name: name, path: url, size: null});
+  if (r.error) { alert(r.error.message); return; }
+  await load(); openFiles(pid);
 }
 async function upFiles(pid, kind, inp){
   const list = Array.from(inp.files || []); if (!list.length) return;
   const st = $('#upst'); let n = 0, added = 0;
   for (const f of list) {
-    st.textContent = 'Uploading ' + (n + 1) + ' of ' + list.length + '…';
+    st.textContent = 'Uploading ' + (n + 1) + ' of ' + list.length + (kind === 'video' ? '… videos can take a minute' : '…');
     let blob = f, name = f.name;
     if (kind === 'photo') { blob = await shrink(f); if (blob.type === 'image/jpeg') name = name.replace(/\.[^.]+$/, '') + '.jpg'; }
     const mine = files.filter(x => x.property_id === pid);
@@ -664,7 +688,7 @@ async function upFiles(pid, kind, inp){
 async function delFile(fid){
   const f = files.find(x => x.id === fid);
   if (!f || !confirm('Delete ' + f.name + '? This cannot be undone.')) return;
-  await sb.storage.from(BUCKET).remove([f.path]);
+  if (f.kind !== 'link') await sb.storage.from(BUCKET).remove([f.path]);
   const r = await sb.from('re_files').delete().eq('id', fid);
   if (r.error) { alert(r.error.message); return; }
   await load(); openFiles(f.property_id);
@@ -887,7 +911,7 @@ async function saveForm(){
 }
 async function delRow(){
   if (!confirm('Delete this record? This cannot be undone.')) return;
-  if (tab === 'props') { const ps = files.filter(f => f.property_id === cur.id).map(f => f.path); if (ps.length) await sb.storage.from(BUCKET).remove(ps); }
+  if (tab === 'props') { const ps = files.filter(f => f.property_id === cur.id && f.kind !== 'link').map(f => f.path); if (ps.length) await sb.storage.from(BUCKET).remove(ps); }
   const r = await sb.from(tab === 'props' ? 're_properties' : 're_contacts').delete().eq('id', cur.id);
   if (r.error) { alert(r.error.message); return; }
   $('#dlg').close(); load();
