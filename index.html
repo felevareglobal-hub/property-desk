@@ -81,6 +81,15 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .tag.sell{background:#FFD9B8;color:#7A3A00}.tag.rent{background:#BFE8D2;color:#17613F}.tag.buy{background:#D9D2F6;color:#4A3A8C}
 .tag.c-residential{background:#D9E8FB;color:#1F4C8F}.tag.c-commercial{background:#FBE0EA;color:#8E2C57}.tag.c-industrial{background:#FCE9C8;color:#6B4400}.tag.c-land{background:#DDF0D3;color:#2F6B1E}.tag.c-other{background:#ECE6F5;color:#5A3F8A}
 .tag.st-available{background:#D4EFDF;color:#1B6B45}.tag.st-negotiating{background:#FFE9A8;color:#6B4E00}.tag.st-closed{background:#C9E4F2;color:#14566F}.tag.st-lost{background:#F9CFCF;color:#8F2A2A}.tag.st-on-hold{background:#E4E7EB;color:#3F4A55}
+/* pastel contact cards: shade follows the contact type */
+.card.k-buyer{background:#EEEBFA;border-top-color:#D3CBF0;border-right-color:#D3CBF0;border-bottom-color:#D3CBF0}
+.card.k-seller{background:#FFF1E6;border-top-color:#F6D5B8;border-right-color:#F6D5B8;border-bottom-color:#F6D5B8}
+.card.k-tenant{background:#E8F6EF;border-top-color:#BFE3D0;border-right-color:#BFE3D0;border-bottom-color:#BFE3D0}
+.card.k-landlord{background:#DFF3F2;border-top-color:#B9E1DF;border-right-color:#B9E1DF;border-bottom-color:#B9E1DF}
+.card.k-broker{background:#FFF7D6;border-top-color:#F1E2A3;border-right-color:#F1E2A3;border-bottom-color:#F1E2A3}
+.card.k-buyer .price{color:#4A3A8C}.card.k-seller .price{color:#A04D00}.card.k-tenant .price{color:#17613F}.card.k-landlord .price{color:#0F5B58}.card.k-broker .price{color:#6B5200}
+.tag.k-buyer{background:#D9D2F6;color:#4A3A8C}.tag.k-seller{background:#FFD9B8;color:#7A3A00}.tag.k-tenant{background:#BFE8D2;color:#17613F}.tag.k-landlord{background:#BFE5E2;color:#0F5B58}.tag.k-broker{background:#FBEAA8;color:#6B5200}
+.letter{grid-column:1/-1;font-weight:800;font-size:15px;color:var(--acc);border-bottom:1px solid var(--line);padding:4px 2px;margin-top:4px}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -194,12 +203,12 @@ function buildBar(){
     h += '<div style="flex-basis:100%"></div><select id="fb" onchange="render()">' + opts([['', 'Any BHK'], ...BHKS], kv('fb')) + '</select><select id="ff" onchange="render()">' + opts([['', 'Any follow-up'], ['od', 'Overdue'], ['td', 'Due today'], ['wk', 'Next 7 days'], ['none', 'No date set']], kv('ff')) + '</select><select id="fsr" onchange="render()">' + opts([['', 'Any source'], ...SRC.map(x => [x, x])], kv('fsr')) + '</select>' + (myRole === 'owner' ? '<select id="fag" onchange="render()">' + opts([['', 'Any owner'], ['none', 'Unassigned'], ...team.map(m => [m.user_id, nm(m) + (m.user_id === uid ? ' (me)' : '')])], kv('fag')) + '</select>' : '') + '<input id="fl" placeholder="Location or area" oninput="render()" value="' + esc(kv('fl')) + '">' + nb('smin', 'Size min (sq ft)') + nb('smax', 'Size max') + nb('pmin', 'Price min (₹ lakh)') + nb('pmax', 'Price max (₹ lakh)') + nb('fmin', 'Floor min') + nb('fmax', 'Floor max') + '<button class="btn ghost" onclick="clearF()">Clear filters</button><span class="sub" id="cnt"></span>';
   } else {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All types'], 'buyer', 'seller', 'tenant', 'landlord', 'broker'], keep.d) + '</select>';
-    h += '<select id="so" onchange="render()">' + opts([['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
+    h += '<select id="so" onchange="render()">' + opts([['name', 'Sort: name A–Z'], ['priority', 'Sort: priority'], ['budget', 'Budget: high to low'], ['location', 'Location A–Z'], ['newest', 'Newest']], keep.o) + '</select>';
   }
   h += '<button class="btn" onclick="openForm()">+ Add</button><button class="btn ghost" onclick="exportCsv()">Export CSV</button>';
   $('#bar').innerHTML = h;
 }
-function setTab(t){ tab = t; ['dash','props','cons'].forEach(k => $('#t-' + k).classList.toggle('on', k === t)); buildBar(); render(); }
+function setTab(t){ tab = t; if ($('#so')) $('#so').value = ''; ['dash','props','cons'].forEach(k => $('#t-' + k).classList.toggle('on', k === t)); buildBar(); render(); }
 
 const SYN = {
   rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented: ['deal_type', 'rent'], lease: ['deal_type', 'rent'], leave: ['deal_type', 'rent'], license: ['deal_type', 'rent'], licence: ['deal_type', 'rent'],
@@ -306,6 +315,7 @@ function matches(p, c){
 }
 const byNew = (a, b) => (b.created_at || '') > (a.created_at || '') ? 1 : -1;
 const SORT = {
+  name: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, {sensitivity: 'base'}),
   priority: (a, b) => (a.priority - b.priority) || byNew(a, b),
   price_asc: (a, b) => (a.price || 0) - (b.price || 0),
   price_desc: (a, b) => (b.price || 0) - (a.price || 0),
@@ -335,7 +345,7 @@ function render(){
     const hits = PQ ? cons.filter(c => smartC(c, PQ)).slice(0, 6) : [];
     const chHtml = hits.length ? '<div class="sub" style="grid-column:1/-1"><b>Contacts matching your search</b></div>' + hits.map(c => {
       const linked = props.filter(x => x.seller_id === c.id || x.buyer_id === c.id || x.broker_id === c.id).length;
-      return '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
+      return '<div class="card p' + c.priority + ' k-' + c.kind + '"><h3>' + esc(c.name) + '</h3><span class="tag k-' + c.kind + '">' + esc(c.kind) + '</span>' +
         '<div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : 'No phone') + (c.email ? ' · ' + esc(c.email) : '') + '</div>' +
         ((c.budget_min || c.budget_max) ? '<div class="price">' + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' : '') +
         '<div class="sub">' + esc([c.preferred_category, c.preferred_location].filter(Boolean).join(' · ')) + '</div>' +
@@ -355,10 +365,12 @@ function render(){
     ).join('') : (props.length ? '<div class="empty">No properties match this search.</div>' : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>'));
   } else {
     const QC = q ? parseQuery(q) : null;
+    let lastL = '';
+    const hdr = c => { if (so !== 'name') return ''; const L = String(c.name || '#').normalize('NFD').charAt(0).toUpperCase(), l = /[A-Z]/.test(L) ? L : '#'; if (l === lastL) return ''; lastL = l; return '<div class="letter">' + l + '</div>'; };
     rows = cons.filter(c => (!d || c.kind === d) && (!QC || smartC(c, QC)));
     rows.sort(SORT[so] || SORT.priority);
     $('#list').innerHTML = rows.length ? rows.map(c =>
-      '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
+      hdr(c) + '<div class="card p' + c.priority + ' k-' + c.kind + '"><h3>' + esc(c.name) + '</h3><span class="tag k-' + c.kind + '">' + esc(c.kind) + '</span>' +
       '<div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a>' : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div>' +
       ((c.budget_min || c.budget_max) ? '<div class="price">' + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' : '') +
       '<div class="sub">' + esc([c.preferred_category, c.preferred_location].filter(Boolean).join(' · ')) + '</div>' +
@@ -884,7 +896,7 @@ function showMatches(id){
   const p = props.find(x => x.id === id);
   const m = cons.filter(c => (c.kind === 'buyer' || c.kind === 'tenant') && matches(p, c)).sort(SORT.priority);
   $('#dlg').innerHTML = '<h3 style="margin-top:0">Clients matching “' + esc(p.title) + '”</h3>' +
-    (m.length ? m.map(c => '<div class="card p' + c.priority + '" style="margin-bottom:8px"><b>' + esc(c.name) + '</b> <span class="tag">' + c.kind + '</span><div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a> · ' : '') + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' + (c.phone ? '<div class="row"><button class="btn wa" onclick="openShare(\'' + p.id + '\', \'' + c.id + '\')">Send on WhatsApp</button></div>' : '') + '</div>').join('') : '<div class="empty">No buyers or tenants match this property’s price, location and category.</div>') +
+    (m.length ? m.map(c => '<div class="card p' + c.priority + ' k-' + c.kind + '" style="margin-bottom:8px"><b>' + esc(c.name) + '</b> <span class="tag k-' + c.kind + '">' + c.kind + '</span><div class="sub">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '">' + esc(c.phone) + '</a> · ' : '') + fmt(c.budget_min) + ' – ' + fmt(c.budget_max) + '</div>' + (c.phone ? '<div class="row"><button class="btn wa" onclick="openShare(\'' + p.id + '\', \'' + c.id + '\')">Send on WhatsApp</button></div>' : '') + '</div>').join('') : '<div class="empty">No buyers or tenants match this property’s price, location and category.</div>') +
     '<div class="row"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   $('#dlg').showModal();
 }
