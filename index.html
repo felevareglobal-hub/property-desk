@@ -73,6 +73,14 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .lbn{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:99px;width:44px;height:44px;font-size:26px;cursor:pointer;flex:none}
 .lbc{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:99px;width:40px;height:40px;font-size:24px;cursor:pointer}
 .lbt{margin-top:10px;font-size:13px;color:#cdd7e0}
+/* pastel property cards: shade follows the deal type */
+.card.d-sell{background:#FFF1E6;border-top-color:#F6D5B8;border-right-color:#F6D5B8;border-bottom-color:#F6D5B8}
+.card.d-rent{background:#E8F6EF;border-top-color:#BFE3D0;border-right-color:#BFE3D0;border-bottom-color:#BFE3D0}
+.card.d-buy{background:#EEEBFA;border-top-color:#D3CBF0;border-right-color:#D3CBF0;border-bottom-color:#D3CBF0}
+.card.d-sell .price{color:#A04D00}.card.d-rent .price{color:#17613F}.card.d-buy .price{color:#4A3A8C}
+.tag.sell{background:#FFD9B8;color:#7A3A00}.tag.rent{background:#BFE8D2;color:#17613F}.tag.buy{background:#D9D2F6;color:#4A3A8C}
+.tag.c-residential{background:#D9E8FB;color:#1F4C8F}.tag.c-commercial{background:#FBE0EA;color:#8E2C57}.tag.c-industrial{background:#FCE9C8;color:#6B4400}.tag.c-land{background:#DDF0D3;color:#2F6B1E}.tag.c-other{background:#ECE6F5;color:#5A3F8A}
+.tag.st-available{background:#D4EFDF;color:#1B6B45}.tag.st-negotiating{background:#FFE9A8;color:#6B4E00}.tag.st-closed{background:#C9E4F2;color:#14566F}.tag.st-lost{background:#F9CFCF;color:#8F2A2A}.tag.st-on-hold{background:#E4E7EB;color:#3F4A55}
 :focus-visible{outline:2px solid var(--hi);outline-offset:2px}
 </style></head><body>
 
@@ -337,8 +345,8 @@ function render(){
     }).join('') + '<div class="sub" style="grid-column:1/-1"><b>Properties</b></div>' : '';
     if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties' + (PQ && explainQ(PQ) ? ' · ' + explainQ(PQ) : '');
     $('#list').innerHTML = chHtml + (rows.length ? rows.map(p =>
-      '<div class="card p' + p.priority + '">' + thumbHtml(p) + '<h3>' + esc(p.title) + '</h3>' +
-      '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
+      '<div class="card p' + p.priority + ' d-' + p.deal_type + '">' + thumbHtml(p) + '<h3>' + esc(p.title) + '</h3>' +
+      '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag c-' + esc(p.category) + '">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag st-' + esc(p.status).replace(/ /g, '-') + '">' + esc(p.status) + '</span>' +
       fuLabel(p) + '<div class="price">' + fmt(p.price) + '</div>' +
       '<div class="sub">' + esc([p.location, p.city].filter(Boolean).join(', ')) + (p.area_sqft ? ' · ' + Number(p.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + (p.floor != null ? ' · ' + (p.floor === 0 ? 'Ground floor' : 'Floor ' + p.floor) : '') + '</div>' +
       contactLine('Seller', p.seller_id) + contactLine('Buyer', p.buyer_id) + commLine(p) + leadLine(p) +
