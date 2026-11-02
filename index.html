@@ -174,7 +174,7 @@ function opts(list, sel){ return list.map(o => { const v = Array.isArray(o) ? o[
 function buildBar(){
   if (tab === 'dash') { $('#bar').innerHTML = ''; return; }
   const keep = {q: ($('#q') || {}).value || '', d: ($('#fd') || {}).value || '', c: ($('#fc') || {}).value || '', s: ($('#fs') || {}).value || '', o: ($('#so') || {}).value || '', b: ($('#mb') || {}).value || ''};
-  let h = '<input id="q" placeholder="' + (tab === 'props' ? 'Try: 2BHK rental, shop sale, plot Pune' : 'Search name, phone, location') + '" oninput="render()" value="' + esc(keep.q) + '">';
+  let h = '<input id="q" placeholder="' + (tab === 'props' ? 'Search anything: 2bhk rent andheri · under 50 lakh · outright · 3rd floor' : 'Search name, phone, location') + '" oninput="render()" value="' + esc(keep.q) + '">';
   if (tab === 'props') {
     h += '<select id="fd" onchange="render()">' + opts([['', 'All deals'], ['sell', 'Selling'], ['buy', 'Buying'], ['rent', 'Rental']], keep.d) + '</select>';
     h += '<select id="fc" onchange="render()">' + opts([['', 'All categories'], ...CATS.map(c => [c, c])], keep.c) + '</select>';
@@ -193,18 +193,99 @@ function buildBar(){
 }
 function setTab(t){ tab = t; ['dash','props','cons'].forEach(k => $('#t-' + k).classList.toggle('on', k === t)); buildBar(); render(); }
 
-const SYN = {rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented: ['deal_type', 'rent'], lease: ['deal_type', 'rent'], sale: ['deal_type', 'sell'], sell: ['deal_type', 'sell'], selling: ['deal_type', 'sell'], buy: ['deal_type', 'buy'], buying: ['deal_type', 'buy'],
-  residential: ['category', 'residential'], flat: ['category', 'residential'], apartment: ['category', 'residential'], house: ['category', 'residential'], villa: ['category', 'residential'],
-  commercial: ['category', 'commercial'], shop: ['category', 'commercial'], office: ['category', 'commercial'], industrial: ['category', 'industrial'], warehouse: ['category', 'industrial'], factory: ['category', 'industrial'], land: ['category', 'land'], plot: ['category', 'land']};
+const SYN = {
+  rent: ['deal_type', 'rent'], rental: ['deal_type', 'rent'], rented: ['deal_type', 'rent'], lease: ['deal_type', 'rent'], leave: ['deal_type', 'rent'], license: ['deal_type', 'rent'], licence: ['deal_type', 'rent'],
+  sale: ['deal_type', 'sell'], sell: ['deal_type', 'sell'], selling: ['deal_type', 'sell'], outright: ['deal_type', 'sell'], resale: ['deal_type', 'sell'], buy: ['deal_type', 'buy'], buying: ['deal_type', 'buy'],
+  residential: ['category', 'residential'], flat: ['category', 'residential'], apartment: ['category', 'residential'], house: ['category', 'residential'], villa: ['category', 'residential'], bungalow: ['category', 'residential'], penthouse: ['category', 'residential'], duplex: ['category', 'residential'],
+  commercial: ['category', 'commercial'], shop: ['category', 'commercial'], office: ['category', 'commercial'], showroom: ['category', 'commercial'], retail: ['category', 'commercial'],
+  industrial: ['category', 'industrial'], warehouse: ['category', 'industrial'], factory: ['category', 'industrial'], godown: ['category', 'industrial'], land: ['category', 'land'], plot: ['category', 'land'],
+  available: ['status', 'available'], negotiating: ['status', 'negotiating'], negotiation: ['status', 'negotiating'], closed: ['status', 'closed'], sold: ['status', 'closed'], won: ['status', 'closed'], executed: ['status', 'closed'], lost: ['status', 'lost'], hold: ['status', 'on hold'], onhold: ['status', 'on hold']
+};
+const SYNF = {pending: p => PEND.includes(p.status), overdue: p => fuState(p) === 'od', today: p => fuState(p) === 'td', urgent: p => p.priority === 1, hot: p => p.priority === 1, unassigned: p => !p.assigned_to};
+const STOP = new Set(['in','at','near','for','with','the','of','a','an','on','to','and','me','show','find','properties','property','price','size','area','location','rate','cost','above','over','under','below','upto','between','min','max','minimum','maximum','within','budget','from','floor','sqft','rs','inr','sq','ft']);
+const UN = '(?:lakhs?|lacs?|lac|l|crores?|cr|k)';
+const AMT = '(\\d+(?:\\.\\d+)?)\\s*(' + UN + ')?\\b';
+const numU = (n, u) => { n = parseFloat(n); if (!u) return n; return u[0] === 'c' ? n * 1e7 : u === 'k' ? n * 1e3 : n * 1e5; };
+const okAmt = (n, u) => !!u || (parseFloat(n) >= 1000 && parseFloat(n) <= 999999);
+const FLO = '(\\d+)(?:st|nd|rd|th)?\\s*floor';
+function parseAlt(s){
+  const c = {price: null, size: null, floor: null, terms: [], neg: [], nums: [], priceEq: null, sizeEq: null};
+  s = ' ' + s.replace(/₹|\brs\.?/g, ' ').replace(/(\d)\s*(bhk|rk|bedrooms?|beds?|br)\b/g, (m, d, u) => d + (u === 'rk' ? 'rk' : 'bhk')).replace(/sq\.?\s*(ft|feet)\b|square\s*(feet|ft)\b|\bsft\b/g, 'sqft').replace(/up to/g, 'upto').replace(/less than|not more than/g, 'under').replace(/more than|at least|atleast/g, 'above').replace(/\s+/g, ' ') + ' ';
+  const N = '(\\d+(?:\\.\\d+)?)';
+  s = s.replace(new RegExp('(?:between\\s+|from\\s+)?' + N + '\\s*(?:and|to|-)\\s*' + N + '\\s*sqft', 'g'), (m, x, y) => { c.size = [Math.min(+x, +y), Math.max(+x, +y)]; return ' '; });
+  s = s.replace(new RegExp('(?:under|upto|below|max|maximum|within)\\s+' + N + '\\s*sqft', 'g'), (m, x) => { c.size = [null, +x]; return ' '; });
+  s = s.replace(new RegExp('(?:above|over|min|minimum|from)\\s+' + N + '\\s*sqft', 'g'), (m, x) => { c.size = [+x, null]; return ' '; });
+  s = s.replace(new RegExp(N + '\\s*sqft', 'g'), (m, x) => { c.size = [+x * 0.9, +x * 1.1]; c.sizeEq = +x; return ' '; });
+  s = s.replace(/ground\s*floor/g, () => { c.floor = [0, 0]; return ' '; });
+  s = s.replace(new RegExp('(?:(above|over|below|under|upto)\\s+)?' + FLO, 'g'), (m, mod, n) => { n = +n; c.floor = (mod === 'above' || mod === 'over') ? [n, null] : (mod ? [null, n] : [n, n]); return ' '; });
+  s = s.replace(/floor\s*(?:no\.?|number)?\s*(\d+)\b/g, (m, n) => { c.floor = [+n, +n]; return ' '; });
+  s = s.replace(new RegExp('(?:between\\s+|from\\s+)?' + AMT + '\\s*(?:and|to|-)\\s*' + AMT, 'g'), (m, n1, u1, n2, u2) => {
+    const a = parseFloat(n1), b = parseFloat(n2), U1 = u1 || u2, U2 = u2 || u1;
+    if (!(U1 || (a >= 1000 && b >= 1000))) return m;
+    c.price = [numU(a, U1), numU(b, U2)].sort((x, y) => x - y); return ' ';
+  });
+  s = s.replace(new RegExp('(?:under|upto|below|max|maximum|within|budget)\\s+' + AMT, 'g'), (m, n, u) => { if (!okAmt(n, u)) return m; c.price = [null, numU(n, u)]; return ' '; });
+  s = s.replace(new RegExp('(?:above|over|min|minimum|from)\\s+' + AMT, 'g'), (m, n, u) => { if (!okAmt(n, u)) return m; c.price = [numU(n, u), null]; return ' '; });
+  s = s.replace(new RegExp('\\b' + AMT, 'g'), (m, n, u) => {
+    if (!okAmt(n, u)) return m;
+    const v = numU(n, u);
+    if (u) { c.price = [v * 0.9, v * 1.1]; c.priceEq = v; return ' '; }
+    c.nums.push({t: n, lo: v * 0.9, hi: v * 1.1}); return ' ';
+  });
+  s.split(' ').forEach(t => {
+    if (t.length > 1 && t[0] === '-') { const x = t.slice(1).replace(/[^a-z0-9+-]+$/, ''); if (x) c.neg.push(x); return; }
+    const x = t.replace(/^[^a-z0-9]+|[^a-z0-9+]+$/g, '');
+    if (x && !STOP.has(x) && !c.terms.includes(x)) c.terms.push(x);
+  });
+  return c;
+}
+function parseQuery(q){
+  return String(q || '').toLowerCase().replace(/(\d),(?=\d{2,3}(?!\d))/g, '$1').split(/\s+or\s+|\s*[|,;]\s*/).map(x => x.trim()).filter(Boolean).map(parseAlt);
+}
+function near(a, b, k){
+  const m = a.length, n = b.length; if (Math.abs(m - n) > k) return false;
+  const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[m][n] <= k;
+}
+const inRng = (v, r) => r == null || (v != null && (r[0] == null || v >= r[0]) && (r[1] == null || v <= r[1]));
+const fuzzy = (t, words) => t.length >= 5 && !/\d/.test(t) && words().some(w => near(w, t, t.length >= 9 ? 2 : 1));
 function linkedText(p){
-  const c = ['seller_id', 'buyer_id', 'broker_id'].map(k => cname(p[k])).filter(Boolean).map(x => [x.name, x.phone, x.email].filter(Boolean).join(' ')).join(' ');
+  const c = ['seller_id', 'buyer_id', 'broker_id'].map(k => cname(p[k])).filter(Boolean).map(x => [x.name, x.phone, String(x.phone || '').replace(/\D/g, ''), x.email].filter(Boolean).join(' ')).join(' ');
   return c + ' ' + agentName(p.assigned_to) + ' ' + notes.filter(n => n.property_id === p.id).map(n => n.body).join(' ') + ' ' + files.filter(f => f.property_id === p.id).map(f => f.name).join(' ');
 }
-function smart(p, q){
-  const toks = q.toLowerCase().replace(/(\d)\s*(bhk|rk)/g, '$1$2').split(/\s+/).filter(Boolean);
+function smartP(p, PQ){
   const base = Object.keys(p).filter(k => !/(^|_)id$|^created|^next_follow/.test(k)).map(k => p[k]).filter(v => v != null).join(' ');
   const hay = (base + ' ' + linkedText(p)).toLowerCase();
-  return toks.every(t => SYN[t] ? p[SYN[t][0]] === SYN[t][1] : hay.includes(t));
+  let ws = null; const words = () => ws || (ws = hay.split(/[^a-z0-9]+/).filter(w => w.length >= 4));
+  const termOk = t => SYNF[t] ? SYNF[t](p) : SYN[t] ? p[SYN[t][0]] === SYN[t][1] : (hay.includes(t) || fuzzy(t, words));
+  return PQ.some(c => inRng(p.price, c.price) && inRng(p.area_sqft, c.size) && inRng(p.floor, c.floor) && c.nums.every(x => hay.includes(x.t) || inRng(p.price, [x.lo, x.hi])) && c.terms.every(termOk) && !c.neg.some(t => hay.includes(t)));
+}
+function smart(p, q){ return smartP(p, parseQuery(q)); }
+function smartC(c, PQ){
+  const hay = [c.name, c.phone, String(c.phone || '').replace(/\D/g, ''), c.email, c.kind, c.preferred_location, c.preferred_category, c.notes].filter(Boolean).join(' ').toLowerCase();
+  let ws = null; const words = () => ws || (ws = hay.split(/[^a-z0-9]+/).filter(w => w.length >= 4));
+  const bud = (lo, hi) => (c.budget_min != null || c.budget_max != null) && !((Number(c.budget_min) || 0) > hi || (c.budget_max == null ? Infinity : Number(c.budget_max)) < lo);
+  return PQ.some(a => {
+    if (!a.nums.every(x => hay.includes(x.t) || bud(x.lo, x.hi))) return false;
+    if (a.price) {
+      const lo = a.price[0] == null ? 0 : a.price[0], hi = a.price[1] == null ? Infinity : a.price[1];
+      if (c.budget_min == null && c.budget_max == null) return false;
+      if ((Number(c.budget_min) || 0) > hi || (c.budget_max == null ? Infinity : Number(c.budget_max)) < lo) return false;
+    }
+    return a.terms.every(t => hay.includes(t) || fuzzy(t, words)) && !a.neg.some(t => hay.includes(t));
+  });
+}
+function explainQ(PQ){
+  if (PQ.length !== 1) return '';
+  const c = PQ[0], o = [], r = (x, f) => x[0] != null && x[1] != null ? f(x[0]) + ' to ' + f(x[1]) : x[0] != null ? 'above ' + f(x[0]) : 'up to ' + f(x[1]);
+  if (c.price) o.push(c.priceEq ? 'price around ' + fmt(c.priceEq) : 'price ' + r(c.price, fmt));
+  if (c.size) o.push(c.sizeEq ? 'size around ' + Math.round(c.sizeEq).toLocaleString('en-IN') + ' sq ft' : 'size ' + r(c.size, v => Math.round(v).toLocaleString('en-IN') + ' sq ft'));
+  if (c.floor) o.push(c.floor[0] === 0 && c.floor[1] === 0 ? 'ground floor' : c.floor[0] === c.floor[1] ? 'floor ' + c.floor[0] : 'floor ' + r(c.floor, v => v));
+  return o.join(' · ');
 }
 function matches(p, c){
   if (c.kind === 'buyer' && p.deal_type !== 'sell') return false;
@@ -235,14 +316,15 @@ function render(){
   let rows;
   if (tab === 'props') {
     const c = ($('#fc') || {}).value, s = ($('#fs') || {}).value, bh = ($('#fb') || {}).value, ff = ($('#ff') || {}).value, sr = ($('#fsr') || {}).value, ag = ($('#fag') || {}).value, mb = cname(($('#mb') || {}).value);
+    const PQ = q ? parseQuery(q) : null;
     const num = id => { const v = ($('#' + id) || {}).value; return v ? Number(v) : null; };
     const loc = (($('#fl') || {}).value || '').toLowerCase().trim();
     const sm = [num('smin'), num('smax')], pr = [num('pmin'), num('pmax')], fr = [num('fmin'), num('fmax')];
     const inR = (v, r, k) => (r[0] == null || (v != null && v >= r[0] * k)) && (r[1] == null || (v != null && v <= r[1] * k));
-    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!q || smart(p, q)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) && (!ag || (ag === 'none' ? !p.assigned_to : p.assigned_to === ag)) &&
+    rows = props.filter(p => (!d || p.deal_type === d) && (!c || p.category === c) && (!s || p.status === s) && (!mb || matches(p, mb)) && (!PQ || smartP(p, PQ)) && (!bh || p.bhk === bh) && fuMatch(p, ff) && (!sr || p.lead_source === sr) && (!ag || (ag === 'none' ? !p.assigned_to : p.assigned_to === ag)) &&
       (!loc || ((p.location || '') + ' ' + (p.city || '')).toLowerCase().includes(loc)) && inR(p.area_sqft, sm, 1) && inR(p.price, pr, 1e5) && inR(p.floor, fr, 1));
     rows.sort(SORT[so] || SORT.priority);
-    const hits = q ? cons.filter(c => { const h = [c.name, c.phone, c.email, c.kind, c.preferred_location, c.preferred_category, c.notes].filter(Boolean).join(' ').toLowerCase(); return q.split(/\s+/).filter(Boolean).every(t => h.includes(t)); }).slice(0, 6) : [];
+    const hits = PQ ? cons.filter(c => smartC(c, PQ)).slice(0, 6) : [];
     const chHtml = hits.length ? '<div class="sub" style="grid-column:1/-1"><b>Contacts matching your search</b></div>' + hits.map(c => {
       const linked = props.filter(x => x.seller_id === c.id || x.buyer_id === c.id || x.broker_id === c.id).length;
       return '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
@@ -253,7 +335,7 @@ function render(){
         '<div class="sub">' + linked + ' linked propert' + (linked === 1 ? 'y' : 'ies') + (linked ? ' (shown below)' : '') + '</div>' +
         '<div class="row"><button class="btn ghost" onclick="goContact(\'' + c.id + '\')">Open contact</button>' + ((c.kind === 'buyer' || c.kind === 'tenant') ? '<button class="btn ghost" onclick="matchFor(\'' + c.id + '\')">Matching properties</button>' : '') + '</div></div>';
     }).join('') + '<div class="sub" style="grid-column:1/-1"><b>Properties</b></div>' : '';
-    if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties';
+    if ($('#cnt')) $('#cnt').textContent = rows.length + ' of ' + props.length + ' properties' + (PQ && explainQ(PQ) ? ' · ' + explainQ(PQ) : '');
     $('#list').innerHTML = chHtml + (rows.length ? rows.map(p =>
       '<div class="card p' + p.priority + '">' + thumbHtml(p) + '<h3>' + esc(p.title) + '</h3>' +
       '<span class="tag ' + p.deal_type + '">' + esc({sell:'Selling',buy:'Buying',rent:'Rental'}[p.deal_type]) + '</span><span class="tag">' + esc(p.category) + '</span>' + (p.bhk ? '<span class="tag">' + esc(p.bhk) + '</span>' : '') + '<span class="tag">' + esc(p.status) + '</span>' +
@@ -264,7 +346,8 @@ function render(){
       '<div class="row"><button class="btn ghost" onclick="openForm(\'' + p.id + '\')">Edit</button><button class="btn ghost" onclick="showMatches(\'' + p.id + '\')">Matching clients</button><button class="btn ghost" onclick="openNotes(\'' + p.id + '\')">Notes (' + notes.filter(n => n.property_id === p.id).length + ')</button><button class="btn ghost" onclick="openFiles(\'' + p.id + '\')">Files (' + files.filter(f => f.property_id === p.id).length + ')</button><button class="btn wa" onclick="openShare(\'' + p.id + '\')">WhatsApp</button></div></div>'
     ).join('') : (props.length ? '<div class="empty">No properties match this search.</div>' : '<div class="empty">No properties yet. Use + Add to enter the first one.</div>'));
   } else {
-    rows = cons.filter(c => (!d || c.kind === d) && (!q || JSON.stringify(c).toLowerCase().includes(q)));
+    const QC = q ? parseQuery(q) : null;
+    rows = cons.filter(c => (!d || c.kind === d) && (!QC || smartC(c, QC)));
     rows.sort(SORT[so] || SORT.priority);
     $('#list').innerHTML = rows.length ? rows.map(c =>
       '<div class="card p' + c.priority + '"><h3>' + esc(c.name) + '</h3><span class="tag">' + esc(c.kind) + '</span>' +
