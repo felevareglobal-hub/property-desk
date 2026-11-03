@@ -890,6 +890,55 @@ function openIO(){
     '<div id="imr"></div><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
   IMP = null; if (!$('#dlg').open) $('#dlg').showModal();
 }
+function simInfo(a, b){
+  if (a.category !== b.category) return null;
+  const why = []; let sc = 2;
+  const wd = x => String(x.location || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
+  const la = wd(a), lb = wd(b), hasA = a.location || a.city, hasB = b.location || b.city;
+  if (hasA && hasB) {
+    const sameLoc = la.length && lb.length && la.some(w => lb.some(x => x === w || (w.length >= 5 && near(x, w, 1))));
+    const sameCity = a.city && b.city && String(a.city).toLowerCase() === String(b.city).toLowerCase();
+    if (sameLoc) { sc += 4; why.push('same area'); } else if (sameCity) { sc += 1; why.push('same city'); } else return null;
+  }
+  if (a.bhk && b.bhk) { if (a.bhk === b.bhk) { sc += 3; why.push(a.bhk); } else sc -= 2; }
+  const rel = (x, y) => Math.abs(x - y) / Math.max(x, y);
+  if (a.price && b.price) { const r = rel(a.price, b.price); if (r <= 0.15) { sc += 3; why.push('price within 15%'); } else if (r <= 0.3) { sc += 1; why.push('price within 30%'); } else sc -= 1; }
+  if (a.area_sqft && b.area_sqft) { const r = rel(a.area_sqft, b.area_sqft); if (r <= 0.15) { sc += 2; why.push('similar size'); } else if (r <= 0.3) { sc += 1; why.push('size within 30%'); } }
+  return {sc: sc, why: why};
+}
+function showSimilar(p){
+  const rank = list => list.filter(x => x.id !== p.id && isOpen(x)).map(x => ({x: x, i: simInfo(p, x)})).filter(r => r.i && r.i.sc >= 5).sort((a, b) => b.i.sc - a.i.sc).slice(0, 5);
+  const same = rank(props.filter(x => x.deal_type === p.deal_type));
+  const oppDeal = {sell: 'buy', buy: 'sell'}[p.deal_type];
+  const other = oppDeal ? rank(props.filter(x => x.deal_type === oppDeal)) : [];
+  const kind = p.deal_type === 'rent' ? 'tenant' : p.deal_type === 'sell' ? 'buyer' : null;
+  const cl = kind ? cons.filter(c => c.kind === kind).map(c => ({c: c, f: fit(p, c)})).filter(x => x.f.ok || x.f.ratio >= 0.75).sort((a, b) => b.f.ratio - a.f.ratio || a.c.priority - b.c.priority).slice(0, 5) : [];
+  const card = r => '<div class="card p' + r.x.priority + ' d-' + r.x.deal_type + '" style="margin-bottom:8px"><b>' + esc(r.x.title) + '</b> ' +
+    (String(r.x.title).toLowerCase() === String(p.title).toLowerCase() ? '<span class="tag od">Possible duplicate</span>' : '') +
+    '<span class="tag st-' + esc(r.x.status).replace(/ /g, '-') + '">' + esc(r.x.status) + '</span>' +
+    '<div class="sub">' + esc([r.x.location, r.x.city].filter(Boolean).join(', ')) + (r.x.bhk ? ' · ' + esc(r.x.bhk) : '') + (r.x.area_sqft ? ' · ' + Number(r.x.area_sqft).toLocaleString('en-IN') + ' sq ft' : '') + ' · <b>' + fmt(r.x.price) + (r.x.deal_type === 'rent' ? ' per month' : '') + '</b></div>' +
+    '<div class="sub">' + esc(r.i.why.join(' · ')) + '</div>' +
+    '<div class="row"><button class="btn ghost" onclick="goProp(\'' + r.x.id + '\')">Show in list</button></div></div>';
+  const ccard = x => '<div class="card p' + x.c.priority + ' k-' + x.c.kind + '" style="margin-bottom:8px"><b>' + esc(x.c.name) + '</b> <span class="tag k-' + x.c.kind + '">' + x.c.kind + '</span><div class="sub">' + (x.c.phone ? '<a href="tel:' + esc(x.c.phone) + '">' + esc(x.c.phone) + '</a> · ' : '') + ((x.c.budget_min || x.c.budget_max) ? fmt(x.c.budget_min) + ' – ' + fmt(x.c.budget_max) : 'No budget set') + '</div>' +
+    (x.f.ok ? '' : '<div class="sub" style="color:#b3402f">Does not fit: ' + esc(x.f.issues.join(' · ')) + '</div>') +
+    (x.c.phone ? '<div class="row"><button class="btn wa" onclick="openShare(\'' + p.id + '\', \'' + x.c.id + '\')">Send on WhatsApp</button></div>' : '') + '</div>';
+  const sameT = {sell: 'Similar properties for sale', rent: 'Similar rentals', buy: 'Similar buying requirements'}[p.deal_type];
+  const otherT = p.deal_type === 'sell' ? 'Buying requirements that may fit this listing' : 'Properties for sale that may fit this requirement';
+  const clT = (kind === 'tenant' ? 'Tenants' : 'Buyers') + ' in your contacts who fit this property';
+  $('#dlg').innerHTML = '<h3 style="margin-top:0">Saved “' + esc(p.title) + '”</h3><div class="sub">Here is what you already have that is similar:</div>' +
+    (same.length ? '<h4 style="margin:14px 0 6px">' + sameT + ' (' + same.length + ')</h4>' + same.map(card).join('') : '') +
+    (other.length ? '<h4 style="margin:14px 0 6px">' + otherT + ' (' + other.length + ')</h4>' + other.map(card).join('') : '') +
+    (cl.length ? '<h4 style="margin:14px 0 6px">' + clT + ' (' + cl.length + ')</h4>' + cl.map(ccard).join('') : '') +
+    (!same.length && !other.length && !cl.length ? '<div class="empty">Nothing similar yet. This is the first property of its kind in your listings.</div>' : '') +
+    '<div class="row" style="margin-top:14px"><button class="btn" onclick="$(\'#dlg\').close(); openForm()">+ Add another</button><button class="btn ghost" onclick="$(\'#dlg\').close()">Close</button></div>';
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+function goProp(id){
+  const x = props.find(y => y.id === id); if (!x) return;
+  $('#dlg').close(); setTab('props');
+  document.querySelectorAll('#bar input, #bar select').forEach(e => { if (e.id !== 'so') e.value = ''; });
+  $('#q').value = x.title; render();
+}
 function openForm(id){
   const fields = tab === 'props' ? PF : CF, list = tab === 'props' ? props : cons;
   cur = id ? list.find(x => x.id === id) : {priority: 2, assigned_to: uid};
@@ -923,9 +972,16 @@ async function saveForm(){
   if (tab === 'props' && rec.status === 'lost' && !rec.lost_reason && !confirm('No lost reason selected. Save anyway?')) return;
   const t = tab === 'props' ? 're_properties' : 're_contacts';
   if ((tab === 'props' && !rec.title) || (tab === 'cons' && !rec.name)) { alert('Please enter a ' + (tab === 'props' ? 'title' : 'name') + '.'); return; }
-  const r = cur.id ? await sb.from(t).update(rec).eq('id', cur.id) : await sb.from(t).insert(Object.assign({org_id: org}, rec));
+  const isNew = !cur.id;
+  if (isNew && tab === 'props') {
+    const d = props.find(x => String(x.title).toLowerCase() === rec.title.toLowerCase() && String(x.location || '').toLowerCase() === String(rec.location || '').toLowerCase());
+    if (d && !confirm('You already have “' + d.title + '” at the same location. Save this one anyway?')) return;
+  }
+  const r = cur.id ? await sb.from(t).update(rec).eq('id', cur.id) : await sb.from(t).insert(Object.assign({org_id: org}, rec)).select();
   if (r.error) { alert(r.error.message); return; }
-  $('#dlg').close(); load();
+  const saved = isNew && tab === 'props' && r.data && r.data[0] ? r.data[0] : null;
+  $('#dlg').close(); await load();
+  if (saved) showSimilar(saved);
 }
 async function delRow(){
   if (!confirm('Delete this record? This cannot be undone.')) return;
