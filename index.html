@@ -4,6 +4,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
 :root{--bg:#eef2f5;--ink:#14202b;--mute:#5d6b78;--card:#fff;--line:#d7dfe6;--acc:#0f6e8c;--hi:#c9822b;--ok:#2e7d5b}
 *{box-sizing:border-box}body{margin:0;font:15px/1.45 'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
@@ -182,7 +183,7 @@ async function boot(){
   show('app'); await load();
 }
 async function load(){
-  const r = await Promise.all([sb.from('re_properties').select('*'), sb.from('re_contacts').select('*'), sb.from('re_notes').select('*'), sb.rpc('re_team'), sb.from('re_files').select('*')]);
+  const r = await Promise.all([fetchAll('re_properties'), fetchAll('re_contacts'), fetchAll('re_notes'), sb.rpc('re_team'), fetchAll('re_files')]);
   props = r[0].data || []; cons = r[1].data || []; notes = r[2].data || []; team = r[3].data || []; files = r[4].data || [];
   const mine = team.find(m => m.user_id === uid); myRole = mine ? mine.role : '';
   await loadThumbs();
@@ -887,9 +888,75 @@ function dlTemplate(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(G), 'Guide');
   XLSX.writeFile(wb, 'property-desk-template.xlsx');
 }
+async function fetchAll(t){
+  let all = [], from = 0;
+  for (;;) {
+    const r = await sb.from(t).select('*').order('created_at', {ascending: true}).order('id').range(from, from + 999);
+    if (r.error) return {data: all, error: r.error};
+    all = all.concat(r.data || []);
+    if (!r.data || r.data.length < 1000) break;
+    from += 1000;
+  }
+  return {data: all, error: null};
+}
+async function backupData(){
+  const st = $('#bkst');
+  if (!window.XLSX) { alert('The Excel library did not load. Check your internet connection and refresh the page.'); return; }
+  st.textContent = 'Preparing the data backup…';
+  const r = await Promise.all([fetchAll('re_properties'), fetchAll('re_contacts'), fetchAll('re_notes'), fetchAll('re_files'), sb.rpc('re_team')]);
+  const bad = r.find(x => x.error);
+  if (bad) { st.textContent = 'Backup failed: ' + bad.error.message; return; }
+  const d = {exported_at: new Date().toISOString(), properties: r[0].data, contacts: r[1].data, notes: r[2].data, files: r[3].data, team: r[4].data || []};
+  const wb = XLSX.utils.book_new();
+  [['Properties', d.properties], ['Contacts', d.contacts], ['Notes', d.notes], ['Files', d.files], ['Team', d.team]].forEach(x => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(x[1].length ? x[1] : [{}]), x[0]));
+  XLSX.writeFile(wb, 'property-desk-backup-' + dayStr(0) + '.xlsx');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 1)], {type: 'application/json'}));
+  a.download = 'property-desk-backup-' + dayStr(0) + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+  st.textContent = 'Saved an Excel file and a JSON file: ' + d.properties.length + ' properties, ' + d.contacts.length + ' contacts, ' + d.notes.length + ' notes, ' + d.files.length + ' file records.';
+}
+async function backupFiles(){
+  const st = $('#bkst');
+  if (!window.JSZip) { alert('The ZIP library did not load. Check your internet connection and refresh the page.'); return; }
+  const fr = await fetchAll('re_files');
+  if (fr.error) { st.textContent = 'Backup failed: ' + fr.error.message; return; }
+  const list = fr.data.filter(f => f.kind !== 'link');
+  if (!list.length) { st.textContent = 'There are no uploaded files to back up yet.'; return; }
+  const pr = await fetchAll('re_properties'), title = {}; (pr.data || []).forEach(x => { title[x.id] = x.title; });
+  const total = list.reduce((a, f) => a + (Number(f.size) || 0), 0);
+  if (!confirm('This will download ' + list.length + ' files (' + kb(total) + ') as ZIP parts of about 150 MB each. Use a computer and keep this page open until it finishes. Continue?')) return;
+  let zip = new JSZip(), bytes = 0, part = 1, done = 0; const used = {}, failed = [];
+  const flush = async () => {
+    if (!bytes) return;
+    st.textContent = 'Building ZIP part ' + part + '…';
+    const blob = await zip.generateAsync({type: 'blob', compression: 'STORE'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'property-desk-files-' + dayStr(0) + '-part' + part + '.zip'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000); part++; zip = new JSZip(); bytes = 0;
+  };
+  for (let i = 0; i < list.length; i += 20) {
+    const chunk = list.slice(i, i + 20), m = {};
+    const sg = await sb.storage.from(BUCKET).createSignedUrls(chunk.map(f => f.path), 3600);
+    (sg.data || []).forEach(x => { if (x.signedUrl) m[x.path] = x.signedUrl; });
+    for (const f of chunk) {
+      st.textContent = 'Downloading file ' + (done + 1) + ' of ' + list.length + '…';
+      try {
+        const b = await (await fetch(m[f.path])).blob();
+        const folder = safeName(title[f.property_id] || 'property');
+        let key = folder + '/' + f.kind + 's/' + safeName(f.name), k = 1;
+        while (used[key]) { k++; key = folder + '/' + f.kind + 's/' + k + '-' + safeName(f.name); }
+        used[key] = 1; zip.file(key, b); bytes += b.size;
+      } catch (e) { failed.push(f.name); }
+      done++;
+      if (bytes >= 150 * 1048576) await flush();
+    }
+  }
+  await flush();
+  st.textContent = 'Done. ' + (done - failed.length) + ' of ' + list.length + ' files saved in ' + (part - 1) + ' ZIP part' + (part - 1 === 1 ? '' : 's') + (failed.length ? '. Could not download: ' + failed.slice(0, 5).join(', ') : '.');
+}
 function openIO(){
   $('#dlg').innerHTML = '<h3 style="margin-top:0">Import / Export</h3>' +
     '<div class="sub"><b>Export to Excel</b></div><div class="row"><button class="btn" onclick="exportXlsx(\'props\')">Properties (' + props.length + ')</button><button class="btn" onclick="exportXlsx(\'cons\')">Contacts (' + cons.length + ')</button></div>' +
+    (myRole === 'owner' ? '<div class="sub" style="margin-top:18px"><b>Full backup (owner)</b></div><div class="row"><button class="btn" onclick="backupData()">Download data backup</button><button class="btn ghost" onclick="backupFiles()">Download photos &amp; documents (ZIP)</button></div><div class="sub" id="bkst">The data backup saves an Excel file and a JSON file with everything. The ZIP holds every photo, video and document.</div>' : '') +
     '<div class="sub" style="margin-top:18px"><b>Import from Excel or CSV</b></div>' +
     '<div class="row"><button class="btn ghost" onclick="dlTemplate()">Download template</button></div>' +
     '<label>What are you importing?</label><select id="imk" onchange="impRead()"><option value="props">Properties</option><option value="cons">Contacts</option></select>' +
